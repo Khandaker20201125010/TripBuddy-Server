@@ -1,11 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -17,15 +12,93 @@ enum Role {
   ADMIN
 }
 
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BANNED
+}
+
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(USER)
+  id                    String     @id @default(uuid())
+  name                  String
+  email                 String     @unique
+  password              String
+  needPasswordChange    Boolean    @default(true)
+  role                  Role       @default(USER)
+  status                UserStatus @default(ACTIVE)
+  bio                   String?
+  profileImage          String?
+  profileImageFileName  String?
+  interests             String[]
+  visitedCountries      String[]
+  rating                Float      @default(0)
+  premium               Boolean    @default(false)
+  subscriptionExpiresAt DateTime?
+
+  travelPlans     TravelPlan[]
+  reviewsGiven    Review[]     @relation("ReviewsGiven")
+  reviewsReceived Review[]     @relation("ReviewsReceived")
+  payments        Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model TravelPlan {
+  id          String   @id @default(uuid())
+  userId      String
+  destination String
+  startDate   DateTime
+  endDate     DateTime
+  budget      Float
+  travelType  String
+  description String?
+  visibility  Boolean  @default(true)
+
+  user User @relation(fields: [userId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+model Review {
+  id         String  @id @default(uuid())
+  reviewerId String
+  revieweeId String
+  rating     Int
+  content    String?
 
+  reviewer User @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  reviewee User @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Payment {
+  id               String  @id @default(uuid())
+  userId           String
+  amount           Float
+  status           String
+  subscriptionType String
+  transactionId    String?
+
+  user User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model Admin {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  password     String
+  profilePhoto String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("admins")
+}
 

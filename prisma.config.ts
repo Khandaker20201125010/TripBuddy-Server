@@ -1,14 +1,21 @@
-import 'dotenv/config'
-import { defineConfig, env } from 'prisma/config'
+// prisma.config.ts
+import 'dotenv/config';
+import path from 'node:path';
+import { defineConfig, env } from 'prisma/config';
 
 export default defineConfig({
-  schema: './prisma/schema.prisma',
+  // point to your schema location
+  schema: path.join(__dirname, 'prisma', 'schema.prisma'),
 
-  migrations: {
-    path: './prisma/migrations',
-  },
+  // migrations dir (default is prisma/migrations)
+  migrations: { path: path.join(__dirname, 'prisma', 'migrations') },
 
+  // supply the database URL for CLI / Migrate
   datasource: {
-    url: env('DATABASE_URL'), // <-- only 1 argument
+    // env reads DATABASE_URL from .env
+    url: env('DATABASE_URL'),
   },
-})
+
+  // If you want to target the "classic" engine behavior, include engine:
+  // engine: 'classic',
+});
