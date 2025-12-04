@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.loginValidation = exports.updateUserValidation = exports.createUserValidation = void 0;
+exports.UserValidation = void 0;
 const zod_1 = require("zod");
-exports.createUserValidation = zod_1.z.object({
+const createUserValidation = zod_1.z.object({
     body: zod_1.z.object({
         name: zod_1.z.string().min(1, "Name is required"),
         email: zod_1.z.string().email("Invalid email"),
@@ -10,7 +10,7 @@ exports.createUserValidation = zod_1.z.object({
         profileImage: zod_1.z.string().optional(),
     }),
 });
-exports.updateUserValidation = zod_1.z.object({
+const updateUserValidation = zod_1.z.object({
     body: zod_1.z.object({
         name: zod_1.z.string().optional(),
         bio: zod_1.z.string().optional(),
@@ -19,9 +19,31 @@ exports.updateUserValidation = zod_1.z.object({
         visitedCountries: zod_1.z.array(zod_1.z.string()).optional(),
     }),
 });
-exports.loginValidation = zod_1.z.object({
+const loginValidation = zod_1.z.object({
     body: zod_1.z.object({
         email: zod_1.z.string().email(),
         password: zod_1.z.string().min(1),
     }),
 });
+const createAdminValidationSchema = zod_1.z.object({
+    password: zod_1.z.string({
+        error: "Password is required"
+    }),
+    admin: zod_1.z.object({
+        name: zod_1.z.string({
+            error: "Name is required!"
+        }),
+        email: zod_1.z.string({
+            error: "Email is required!"
+        }),
+        contactNumber: zod_1.z.string({
+            error: "Contact Number is required!"
+        })
+    })
+});
+exports.UserValidation = {
+    createUserValidation,
+    updateUserValidation,
+    createAdminValidationSchema,
+    loginValidation,
+};

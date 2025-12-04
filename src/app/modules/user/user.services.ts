@@ -135,9 +135,10 @@ const createAdmin = async (req: Request): Promise<Admin> => {
 const getUserProfile = async (id: string) => {
   const user = await prisma.user.findUnique({
     where: { id },
-    include: {
+     include: {
       travelPlans: true,
-      reviews: true, 
+      reviewsGiven: true,
+      reviewsReceived: true,
     },
   });
 

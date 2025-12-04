@@ -14,30 +14,29 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const app_1 = __importDefault(require("./app"));
 const config_1 = __importDefault(require("./app/config"));
+const superAdmin_1 = require("./app/utility/superAdmin");
 function bootstrap() {
     return __awaiter(this, void 0, void 0, function* () {
-        // This variable will hold our server instance
         let server;
         try {
-            // Start the server
+            // Create Super Admin before server listens
+            yield (0, superAdmin_1.ensureSuperAdmin)();
             server = app_1.default.listen(config_1.default.port, () => {
                 console.log(`🚀 Server is running on http://localhost:${config_1.default.port}`);
             });
-            // Function to gracefully shut down the server
             const exitHandler = () => {
                 if (server) {
                     server.close(() => {
                         console.log("Server closed gracefully.");
-                        process.exit(1); // Exit with a failure code
+                        process.exit(1);
                     });
                 }
                 else {
                     process.exit(1);
                 }
             };
-            // Handle unhandled promise rejections
             process.on("unhandledRejection", (error) => {
-                console.log("Unhandled Rejection is detected, we are closing our server...");
+                console.log("Unhandled Rejection detected. Closing server...");
                 if (server) {
                     server.close(() => {
                         console.log(error);

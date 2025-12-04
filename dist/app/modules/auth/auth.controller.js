@@ -23,23 +23,25 @@ const login = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, 
         secure: true,
         httpOnly: true,
         sameSite: "none",
-        maxAge: 1000 * 60 * 60
+        maxAge: 1000 * 60 * 60,
     });
     res.cookie("refreshToken", refreshToken, {
         secure: true,
         httpOnly: true,
         sameSite: "none",
-        maxAge: 1000 * 60 * 60 * 24 * 90
+        maxAge: 1000 * 60 * 60 * 24 * 90,
     });
     (0, sendResponse_1.default)(res, {
         statusCode: 201,
         success: true,
         message: "User loggedin successfully!",
         data: {
-            needPasswordChange
-        }
+            accessToken,
+            refreshToken,
+            needPasswordChange,
+        },
     });
 }));
 exports.AuthController = {
-    login
+    login,
 };

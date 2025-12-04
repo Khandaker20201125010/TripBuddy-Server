@@ -7,14 +7,28 @@ import { reviewSearchableFields } from "./review.constant";
 
 
 const createReview = async (payload: any, reviewerId: string) => {
+  // Find travel plan owner
+  const travelPlan = await prisma.travelPlan.findUnique({
+    where: { id: payload.travelPlanId },
+  });
+
+  if (!travelPlan) throw new ApiError(404, "Travel plan not found");
+
+  const revieweeId = travelPlan.userId; // owner of the travel plan
+
   const review = await prisma.review.create({
     data: {
-      ...payload,
       reviewerId,
+      revieweeId,
+      travelPlanId: payload.travelPlanId,
+      rating: payload.rating,
+      content: payload.content,
     },
   });
+
   return review;
 };
+
 
 const getAllReviews = async (params: any, options: IOptions) => {
   const { page, limit, skip, sortBy, sortOrder } =
