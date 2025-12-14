@@ -56,22 +56,11 @@ const getSingleTravelPlan = catchAsync(async (req, res) => {
 });
 
 const updateTravelPlan = catchAsync(async (req: any, res) => {
-  let imageUrl = undefined;
-
-  if (req.file) {
-    const cloudResult = await fileUploader.uploadToCloudinary(req.file);
-    imageUrl = cloudResult.secure_url;
-  }
-
-  const data = {
-    ...req.body,
-    ...(imageUrl && { image: imageUrl }),
-  };
-
   const result = await TravelPlanService.updateTravelPlan(
     req.params.id,
     req.user.id,
-    data
+    req.body,
+    req.file 
   );
 
   sendResponse(res, {
@@ -81,6 +70,19 @@ const updateTravelPlan = catchAsync(async (req: any, res) => {
     data: result,
   });
 });
+
+const getRecommendedTravelersController = catchAsync(async (req: Request & { user?: any }, res) => {
+  const userId = req.user?.id;
+  const recommended = await TravelPlanService.getRecommendedTravelers(userId);
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Recommended travelers fetched successfully',
+    data: recommended,
+  });
+});
+
 
 const deleteTravelPlan = catchAsync(async (req: any, res) => {
   const result = await TravelPlanService.deleteTravelPlan(
@@ -95,6 +97,16 @@ const deleteTravelPlan = catchAsync(async (req: any, res) => {
     data: result,
   });
 });
+const matchTravelPlans = catchAsync(async (req, res) => {
+  const result = await TravelPlanService.matchTravelPlans(req.query);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Matched travel plans retrieved successfully",
+    data: result,
+  });
+});
 
 const getAISuggestions = catchAsync(async (req: Request, res: Response) => {
   const result = await TravelPlanService.getAISuggestions(req.body);
@@ -106,6 +118,20 @@ const getAISuggestions = catchAsync(async (req: Request, res: Response) => {
     data: result,
   });
 });
+const getMyTravelPlans = catchAsync(
+  async (req: Request & { user?: any }, res: Response) => {
+    const userId = req.user.id;
+    const result = await TravelPlanService.getMyTravelPlans(userId);
+
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: "My travel plans retrieved",
+      data: result,
+    });
+  }
+);
+
 export const TravelPlanController = {
   createTravelPlan,
   getAllTravelPlans,
@@ -113,4 +139,7 @@ export const TravelPlanController = {
   updateTravelPlan,
   deleteTravelPlan,
   getAISuggestions,
+  matchTravelPlans,
+  getRecommendedTravelersController,
+  getMyTravelPlans,
 };

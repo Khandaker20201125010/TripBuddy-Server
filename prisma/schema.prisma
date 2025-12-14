@@ -35,10 +35,10 @@ model User {
   premium               Boolean    @default(false)
   subscriptionExpiresAt DateTime?
 
-  travelPlans      TravelPlan[]
-  reviewsGiven     Review[]   @relation("Reviewer")  // Reviews user wrote
-  reviewsReceived  Review[]   @relation("Reviewee")  // Reviews user received
-  payments         Payment[]
+  travelPlans     TravelPlan[]
+  reviewsGiven    Review[]     @relation("Reviewer") // Reviews user wrote
+  reviewsReceived Review[]     @relation("Reviewee") // Reviews user received
+  payments        Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -47,7 +47,7 @@ model User {
 }
 
 model TravelPlan {
-  id          String    @id @default(uuid())
+  id          String   @id @default(uuid())
   userId      String
   image       String?
   destination String
@@ -56,17 +56,17 @@ model TravelPlan {
   budget      Float
   travelType  String
   description String?
-  visibility  Boolean   @default(true)
+  visibility  Boolean  @default(true)
 
-  user       User       @relation(fields: [userId], references: [id])
-  reviews    Review[]
+  user    User     @relation(fields: [userId], references: [id])
+  reviews Review[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Review {
-  id           String      @id @default(uuid())
+  id           String  @id @default(uuid())
   reviewerId   String
   revieweeId   String
   travelPlanId String
@@ -82,12 +82,14 @@ model Review {
 }
 
 model Payment {
-  id               String   @id @default(uuid())
-  userId           String
-  amount           Float
-  status           String
-  subscriptionType String
-  transactionId    String?
+  id                    String    @id @default(uuid())
+  userId                String
+  amount                Float
+  status                String
+  subscriptionType      String
+  transactionId         String   @unique
+  premium               Boolean   @default(false)
+  subscriptionExpiresAt DateTime?
 
   user User @relation(fields: [userId], references: [id])
 

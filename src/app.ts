@@ -5,14 +5,23 @@ import globalErrorHandler from "./app/middlewares/globalErrorHandler";
 import config from "./app/config";
 import router from "./app/routes";
 import cookieParser from "cookie-parser";
+import { webhookHandler } from "./app/modules/payments/payment.webhook";
 
 const app: Application = express();
-app.use(
-  cors({
-    origin: "http://localhost:3000",
-    credentials: true,
-  })
+
+
+app.post(
+  "/webhook",
+  express.raw({ type: "application/json" }),
+  webhookHandler
 );
+
+
+app.use(cors({
+    origin: 'http://localhost:3000',
+    credentials: true,
+    
+}));
 
 //parser
 app.use(express.json());

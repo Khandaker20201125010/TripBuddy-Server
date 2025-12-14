@@ -6,8 +6,13 @@ import { paginationHelper, IOptions } from "../../helper/paginationHelper";
 import { travelPlanSearchableFields } from "./travelPlan.constant";
 import { fileUploader } from "../../helper/fileUploader";
 import { openai } from "../../helper/Open-Router";
+import { getPlanStatus } from "../../helper/getPlanStatus";
 
-const createTravelPlan = async (payload: any, userId: string, file?: Express.Multer.File) => {
+const createTravelPlan = async (
+  payload: any,
+  userId: string,
+  file?: Express.Multer.File
+) => {
   let imageUrl = null;
 
   if (file) {
@@ -15,17 +20,34 @@ const createTravelPlan = async (payload: any, userId: string, file?: Express.Mul
     imageUrl = cloudResult.secure_url;
   }
 
+  const start = new Date(payload.startDate);
+  const end = new Date(payload.endDate);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      "Invalid date format provided for startDate or endDate"
+    );
+  }
+
   return await prisma.travelPlan.create({
     data: {
-      ...payload,
+      destination: payload.destination,
+      travelType: payload.travelType,
+      description: payload.description,
       image: imageUrl,
-      budget: Number(payload.budget),
       userId,
-      startDate: new Date(payload.startDate),
-      endDate: new Date(payload.endDate),
+
+      // ✅ FIXED TYPES
+      budget: Number(payload.budget),
+      startDate: start,
+      endDate: end,
+      visibility:
+        payload.visibility === true || payload.visibility === "true",
     },
   });
 };
+
 
 
 const getAllTravelPlans = async (params: any, options: IOptions) => {
@@ -103,27 +125,57 @@ const getSingleTravelPlan = async (id: string) => {
   return plan;
 };
 
-const updateTravelPlan = async (id: string, userId: string, payload: any) => {
+const updateTravelPlan = async (
+  id: string,
+  userId: string,
+  payload: any,
+  file?: Express.Multer.File
+) => {
   const existing = await prisma.travelPlan.findUnique({ where: { id } });
 
   if (!existing) throw new ApiError(404, "Travel Plan not found");
   if (existing.userId !== userId)
     throw new ApiError(403, "Unauthorized to update");
 
-  // Convert values if provided
-  const updatedData: any = {
-    ...payload,
-  };
+  let imageUrl = existing.image;
 
-  if (payload.budget) updatedData.budget = Number(payload.budget);
-  if (payload.startDate) updatedData.startDate = new Date(payload.startDate);
-  if (payload.endDate) updatedData.endDate = new Date(payload.endDate);
+  if (file) {
+    const cloudResult = await fileUploader.uploadToCloudinary(file);
+    imageUrl = cloudResult.secure_url;
+  }
+
+  const updatedData: any = {};
+
+  if (payload.destination !== undefined)
+    updatedData.destination = payload.destination;
+
+  if (payload.travelType !== undefined)
+    updatedData.travelType = payload.travelType;
+
+  if (payload.description !== undefined)
+    updatedData.description = payload.description;
+
+  if (payload.visibility !== undefined)
+    updatedData.visibility =
+      payload.visibility === true || payload.visibility === "true";
+
+  if (payload.budget !== undefined)
+    updatedData.budget = Number(payload.budget);
+
+  if (payload.startDate)
+    updatedData.startDate = new Date(payload.startDate);
+
+  if (payload.endDate)
+    updatedData.endDate = new Date(payload.endDate);
+
+  updatedData.image = imageUrl;
 
   return prisma.travelPlan.update({
     where: { id },
     data: updatedData,
   });
 };
+
 
 const deleteTravelPlan = async (id: string, userId: string) => {
   const existing = await prisma.travelPlan.findUnique({ where: { id } });
@@ -138,13 +190,29 @@ const deleteTravelPlan = async (id: string, userId: string) => {
 
 
 const matchTravelPlans = async (filters: any) => {
-  const { destination, startDate, endDate, travelType } = filters;
+  const { destination, startDate, endDate, travelType, searchTerm } = filters;
 
   return prisma.travelPlan.findMany({
     where: {
       AND: [
-        destination ? { destination: { contains: destination, mode: "insensitive" } } : {},
-        travelType ? { travelType } : {},
+        // global search (destination + travelType)
+        searchTerm
+          ? {
+              OR: [
+                { destination: { contains: searchTerm, mode: "insensitive" } },
+                { travelType: { contains: searchTerm, mode: "insensitive" } },
+              ],
+            }
+          : {},
+
+        destination
+          ? { destination: { contains: destination, mode: "insensitive" } }
+          : {},
+
+        travelType
+          ? { travelType: { contains: travelType, mode: "insensitive" } }
+          : {},
+
         startDate ? { startDate: { gte: new Date(startDate) } } : {},
         endDate ? { endDate: { lte: new Date(endDate) } } : {},
       ],
@@ -152,6 +220,29 @@ const matchTravelPlans = async (filters: any) => {
     include: { user: true },
   });
 };
+
+const getRecommendedTravelers = async (userId: string) => {
+  const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+  if (!currentUser) return [];
+
+  const interests = currentUser.interests; // array of strings
+
+  // Find travelers with matching interests
+  const recommendedTravelers = await prisma.user.findMany({
+    where: {
+      id: { not: userId }, // exclude current user
+      interests: { hasSome: interests }, // Prisma: any match
+      status: 'ACTIVE',
+    },
+    take: 6, // number of recommendations
+    include: {
+      travelPlans: true, // optional
+    },
+  });
+
+  return recommendedTravelers;
+};
+
 
 const getAISuggestions = async (payload: { symptoms: string }) => {
   const { symptoms } = payload;
@@ -245,7 +336,17 @@ The JSON format MUST be:
   };
 };
 
+const getMyTravelPlans = async (userId: string) => {
+  const plans = await prisma.travelPlan.findMany({
+    where: { userId },
+    orderBy: { startDate: "asc" },
+  });
 
+  return plans.map(plan => ({
+    ...plan,
+    status: getPlanStatus(plan.startDate, plan.endDate),
+  }));
+};
 export const TravelPlanService = {
   createTravelPlan,
   getAllTravelPlans,
@@ -253,5 +354,7 @@ export const TravelPlanService = {
   updateTravelPlan,
   deleteTravelPlan,
   matchTravelPlans,
-  getAISuggestions
+  getAISuggestions,
+  getRecommendedTravelers,
+  getMyTravelPlans,
 };

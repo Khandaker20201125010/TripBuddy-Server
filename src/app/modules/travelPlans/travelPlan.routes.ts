@@ -17,6 +17,16 @@ router.post(
   TravelPlanController.createTravelPlan
 );
 
+router.get(
+  "/my",
+  auth(Role.USER, Role.ADMIN),
+  TravelPlanController.getMyTravelPlans
+);
+
+router.get("/match", TravelPlanController.matchTravelPlans);
+
+router.get("/recommended", auth(Role.USER, Role.ADMIN), TravelPlanController.getRecommendedTravelersController);
+
 router.post("/suggestion", TravelPlanController.getAISuggestions);
 // GET ALL
 router.get("/", TravelPlanController.getAllTravelPlans);
