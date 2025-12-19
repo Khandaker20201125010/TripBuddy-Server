@@ -37,29 +37,33 @@ const createTravelPlan = async (
       description: payload.description,
       image: imageUrl,
       userId,
-
-      // ✅ FIXED TYPES
       budget: Number(payload.budget),
       startDate: start,
       endDate: end,
-      visibility:
-        payload.visibility === true || payload.visibility === "true",
+      visibility: payload.visibility === true || payload.visibility === "true",
     },
+    // ✅ FIXED: Include user so frontend state updates correctly immediately
+   include: {
+        user: true 
+    }
   });
 };
-
-
 
 const getAllTravelPlans = async (params: any, options: IOptions) => {
   const { page, limit, skip, sortBy, sortOrder } =
     paginationHelper.calculatePagination(options);
 
-  const { searchTerm, minBudget, maxBudget, startDate, endDate, ...filterData } =
-    params;
+  const {
+    searchTerm,
+    minBudget,
+    maxBudget,
+    startDate,
+    endDate,
+    ...filterData
+  } = params;
 
   const andConditions: Prisma.TravelPlanWhereInput[] = [];
 
-  // search (destination / travelType)
   if (searchTerm) {
     andConditions.push({
       OR: travelPlanSearchableFields.map((field) => ({
@@ -68,7 +72,6 @@ const getAllTravelPlans = async (params: any, options: IOptions) => {
     });
   }
 
-  // budget filter
   if (minBudget || maxBudget) {
     andConditions.push({
       budget: {
@@ -78,7 +81,6 @@ const getAllTravelPlans = async (params: any, options: IOptions) => {
     });
   }
 
-  // date filter
   if (startDate || endDate) {
     andConditions.push({
       startDate: {
@@ -90,7 +92,6 @@ const getAllTravelPlans = async (params: any, options: IOptions) => {
     });
   }
 
-  // direct filter
   if (Object.keys(filterData).length > 0) {
     andConditions.push({
       AND: Object.keys(filterData).map((key) => ({
@@ -146,36 +147,23 @@ const updateTravelPlan = async (
 
   const updatedData: any = {};
 
-  if (payload.destination !== undefined)
-    updatedData.destination = payload.destination;
-
-  if (payload.travelType !== undefined)
-    updatedData.travelType = payload.travelType;
-
-  if (payload.description !== undefined)
-    updatedData.description = payload.description;
-
+  if (payload.destination !== undefined) updatedData.destination = payload.destination;
+  if (payload.travelType !== undefined) updatedData.travelType = payload.travelType;
+  if (payload.description !== undefined) updatedData.description = payload.description;
   if (payload.visibility !== undefined)
-    updatedData.visibility =
-      payload.visibility === true || payload.visibility === "true";
-
-  if (payload.budget !== undefined)
-    updatedData.budget = Number(payload.budget);
-
-  if (payload.startDate)
-    updatedData.startDate = new Date(payload.startDate);
-
-  if (payload.endDate)
-    updatedData.endDate = new Date(payload.endDate);
+    updatedData.visibility = payload.visibility === true || payload.visibility === "true";
+  if (payload.budget !== undefined) updatedData.budget = Number(payload.budget);
+  if (payload.startDate) updatedData.startDate = new Date(payload.startDate);
+  if (payload.endDate) updatedData.endDate = new Date(payload.endDate);
 
   updatedData.image = imageUrl;
 
   return prisma.travelPlan.update({
     where: { id },
     data: updatedData,
+    include: { user: true },
   });
 };
-
 
 const deleteTravelPlan = async (id: string, userId: string) => {
   const existing = await prisma.travelPlan.findUnique({ where: { id } });
@@ -188,14 +176,12 @@ const deleteTravelPlan = async (id: string, userId: string) => {
   return { message: "Travel Plan deleted successfully" };
 };
 
-
 const matchTravelPlans = async (filters: any) => {
   const { destination, startDate, endDate, travelType, searchTerm } = filters;
 
   return prisma.travelPlan.findMany({
     where: {
       AND: [
-        // global search (destination + travelType)
         searchTerm
           ? {
               OR: [
@@ -204,15 +190,12 @@ const matchTravelPlans = async (filters: any) => {
               ],
             }
           : {},
-
         destination
           ? { destination: { contains: destination, mode: "insensitive" } }
           : {},
-
         travelType
           ? { travelType: { contains: travelType, mode: "insensitive" } }
           : {},
-
         startDate ? { startDate: { gte: new Date(startDate) } } : {},
         endDate ? { endDate: { lte: new Date(endDate) } } : {},
       ],
@@ -225,24 +208,22 @@ const getRecommendedTravelers = async (userId: string) => {
   const currentUser = await prisma.user.findUnique({ where: { id: userId } });
   if (!currentUser) return [];
 
-  const interests = currentUser.interests; // array of strings
+  const interests = currentUser.interests; 
 
-  // Find travelers with matching interests
   const recommendedTravelers = await prisma.user.findMany({
     where: {
-      id: { not: userId }, // exclude current user
-      interests: { hasSome: interests }, // Prisma: any match
-      status: 'ACTIVE',
+      id: { not: userId },
+      interests: { hasSome: interests },
+      status: "ACTIVE",
     },
-    take: 6, // number of recommendations
+    take: 6,
     include: {
-      travelPlans: true, // optional
+      travelPlans: true,
     },
   });
 
   return recommendedTravelers;
 };
-
 
 const getAISuggestions = async (payload: { symptoms: string }) => {
   const { symptoms } = payload;
@@ -272,24 +253,18 @@ const getAISuggestions = async (payload: { symptoms: string }) => {
     reviews: plan.reviews.length,
   }));
 
-  // NEW: Strong JSON-only instruction
-const prompt = `
+  const prompt = `
 You are a travel recommendation AI.
-
 User symptoms: "${symptoms}"
-
 Here is a list of available travel plans:
 ${JSON.stringify(simplifiedPlans, null, 2)}
-
 TASK:
 Select the TOP 3 travel plans that best match the user's symptoms.
-
 RULES:
 - ALWAYS return between 1 to 3 suggestions.
 - Sort them by relevance (highest matchScore first).
 - Return ONLY VALID JSON.
 - Do NOT include any explanation outside JSON.
-
 The JSON format MUST be:
 {
   "suggestions": [
@@ -302,7 +277,6 @@ The JSON format MUST be:
 }
 `;
 
-
   const response = await openai.chat.completions.create({
     model: "meta-llama/llama-3.3-70b-instruct:free",
     messages: [{ role: "user", content: prompt }],
@@ -311,13 +285,10 @@ The JSON format MUST be:
 
   const aiText = response.choices[0]?.message?.content || "{}";
 
-  // NEW: Safe JSON parsing
   let aiOutput;
   try {
-    // Direct parse first attempt
     aiOutput = JSON.parse(aiText);
   } catch {
-    // Attempt to extract JSON substring
     const match = aiText.match(/\{[\s\S]*\}/);
     if (match) {
       try {
@@ -340,13 +311,15 @@ const getMyTravelPlans = async (userId: string) => {
   const plans = await prisma.travelPlan.findMany({
     where: { userId },
     orderBy: { startDate: "asc" },
+    include: { user: true },
   });
 
-  return plans.map(plan => ({
+  return plans.map((plan) => ({
     ...plan,
     status: getPlanStatus(plan.startDate, plan.endDate),
   }));
 };
+
 export const TravelPlanService = {
   createTravelPlan,
   getAllTravelPlans,

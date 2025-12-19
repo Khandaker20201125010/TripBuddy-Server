@@ -18,7 +18,7 @@ router.post(
 );
 
 router.get(
-  "/my",
+  "/my-plans",
   auth(Role.USER, Role.ADMIN),
   TravelPlanController.getMyTravelPlans
 );

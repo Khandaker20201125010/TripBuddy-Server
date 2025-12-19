@@ -14,8 +14,14 @@ const createTravelPlan = catchAsync(
       throw new ApiError(401, "Authentication required");
     }
 
+    const payload = {
+        ...req.body,
+        budget: req.body.budget ? Number(req.body.budget) : 0,
+        visibility: req.body.visibility === 'true'
+    };
+
     const result = await TravelPlanService.createTravelPlan(
-      req.body,
+      payload,
       req.user.id,
       req.file
     );
@@ -120,18 +126,23 @@ const getAISuggestions = catchAsync(async (req: Request, res: Response) => {
 });
 const getMyTravelPlans = catchAsync(
   async (req: Request & { user?: any }, res: Response) => {
-    const userId = req.user.id;
+    // auth middleware attaches the JWT payload to req.user
+    const userId = req.user?.id; 
+
+    if (!userId) {
+      throw new ApiError(401, "User ID not found in token");
+    }
+
     const result = await TravelPlanService.getMyTravelPlans(userId);
 
     sendResponse(res, {
-      statusCode: httpStatus.OK,
+      statusCode: 200,
       success: true,
       message: "My travel plans retrieved",
       data: result,
     });
   }
 );
-
 export const TravelPlanController = {
   createTravelPlan,
   getAllTravelPlans,
