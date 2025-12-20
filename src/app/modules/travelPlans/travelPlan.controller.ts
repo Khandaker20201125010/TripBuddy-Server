@@ -66,6 +66,7 @@ const updateTravelPlan = catchAsync(async (req: any, res) => {
     req.params.id,
     req.user.id,
     req.body,
+    req.user.role,
     req.file 
   );
 
@@ -90,16 +91,19 @@ const getRecommendedTravelersController = catchAsync(async (req: Request & { use
 });
 
 
-const deleteTravelPlan = catchAsync(async (req: any, res) => {
-  const result = await TravelPlanService.deleteTravelPlan(
-    req.params.id,
-    req.user.id
-  );
+const deleteTravelPlan = catchAsync(async (req: Request & { user?: any }, res: Response) => {
+  const { id } = req.params;
+  const userId = req.user?.id;
+  const userRole = req.user?.role; // <--- Make sure your auth middleware populates this
+
+  if (!userId) throw new ApiError(401, "You must be logged in");
+
+  const result = await TravelPlanService.deleteTravelPlan(id, userId, userRole);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: "Travel plan deleted",
+    message: "Travel plan deleted successfully",
     data: result,
   });
 });
@@ -126,23 +130,48 @@ const getAISuggestions = catchAsync(async (req: Request, res: Response) => {
 });
 const getMyTravelPlans = catchAsync(
   async (req: Request & { user?: any }, res: Response) => {
-    // auth middleware attaches the JWT payload to req.user
     const userId = req.user?.id; 
 
     if (!userId) {
       throw new ApiError(401, "User ID not found in token");
     }
 
-    const result = await TravelPlanService.getMyTravelPlans(userId);
+    // ✅ CHANGE THIS: Use the service that includes buddies and users
+    const result = await TravelPlanService.getMyTravelPlansWithBuddies(userId);
 
     sendResponse(res, {
       statusCode: 200,
       success: true,
-      message: "My travel plans retrieved",
+      message: "My travel plans with requests retrieved successfully",
       data: result,
     });
   }
 );
+const requestJoinTrip = catchAsync(async (req: Request & { user?: any }, res: Response) => {
+    const result = await TravelPlanService.requestJoinTrip(req.params.id, req.user.id);
+  
+    sendResponse(res, {
+      statusCode: httpStatus.CREATED,
+      success: true,
+      message: "Join request sent successfully",
+      data: result,
+    });
+});
+const updateJoinRequestStatus = catchAsync(async (req: Request & { user?: any }, res: Response) => {
+    const { buddyId } = req.params;
+    const { status } = req.body;
+    const hostId = req.user.id;
+
+    const result = await TravelPlanService.updateJoinRequestStatus(buddyId, hostId, status);
+  
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: `Join request ${status.toLowerCase()} successfully`,
+      data: result,
+    });
+});
+
 export const TravelPlanController = {
   createTravelPlan,
   getAllTravelPlans,
@@ -153,4 +182,6 @@ export const TravelPlanController = {
   matchTravelPlans,
   getRecommendedTravelersController,
   getMyTravelPlans,
+  requestJoinTrip,
+  updateJoinRequestStatus,
 };

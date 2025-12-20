@@ -1,10 +1,12 @@
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+// prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -18,28 +20,41 @@ enum UserStatus {
   BANNED
 }
 
+enum BuddyStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  TRIP_INVITE
+  TRIP_JOIN_REQUEST
+  TRIP_APPROVED
+  TRIP_REJECTED
+  LEAVE_REVIEW
+}
+
 model User {
-  id                    String     @id @default(uuid())
-  name                  String
-  email                 String     @unique
-  password              String
-  needPasswordChange    Boolean    @default(true)
-  role                  Role       @default(USER)
-  status                UserStatus @default(ACTIVE)
-  bio                   String?
-  profileImage          String?
-  profileImageFileName  String?
-  interests             String[]
-  visitedCountries      String[]
-  rating                Float      @default(0)
-  premium               Boolean    @default(false)
-  subscriptionExpiresAt DateTime?
-
+  id                   String     @id @default(uuid())
+  name                 String
+  email                String     @unique
+  password             String
+  needPasswordChange   Boolean    @default(true)
+  role                 Role       @default(USER)
+  status               UserStatus @default(ACTIVE)
+  bio                  String?
+  visitedCountries     String[]   @default([])
+  profileImage         String?
+  profileImageFileName String?
+  rating               Float      @default(0)
+  
+  // Relations
   travelPlans     TravelPlan[]
-  reviewsGiven    Review[]     @relation("Reviewer") // Reviews user wrote
-  reviewsReceived Review[]     @relation("Reviewee") // Reviews user received
-  payments        Payment[]
-
+  joinedTrips     TravelBuddy[] 
+  notifications   Notification[]
+  reviewsGiven    Review[]       @relation("Reviewer")
+  reviewsReceived Review[]       @relation("Reviewee")
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -58,11 +73,48 @@ model TravelPlan {
   description String?
   visibility  Boolean  @default(true)
 
-  user    User     @relation(fields: [userId], references: [id])
-  reviews Review[]
+ 
+  user          User           @relation(fields: [userId], references: [id])
+  
+  
+  buddies       TravelBuddy[]  
+  reviews       Review[]
+  notifications Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model TravelBuddy {
+  id           String      @id @default(uuid())
+  travelPlanId String
+  userId       String
+  status       BuddyStatus @default(PENDING)
+
+
+  travelPlan TravelPlan @relation(fields: [travelPlanId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([travelPlanId, userId]) 
+}
+
+model Notification {
+  id           String           @id @default(uuid())
+  userId       String 
+  travelPlanId String?
+  message      String
+  link         String? 
+  isRead       Boolean          @default(false)
+  type         NotificationType
+
+  user       User        @relation(fields: [userId], references: [id])
+
+  travelPlan TravelPlan? @relation(fields: [travelPlanId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }
 
 model Review {
@@ -75,35 +127,9 @@ model Review {
 
   reviewer   User       @relation("Reviewer", fields: [reviewerId], references: [id])
   reviewee   User       @relation("Reviewee", fields: [revieweeId], references: [id])
-  travelPlan TravelPlan @relation(fields: [travelPlanId], references: [id])
+  
+  travelPlan TravelPlan @relation(fields: [travelPlanId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
-
-model Payment {
-  id                    String    @id @default(uuid())
-  userId                String
-  amount                Float
-  status                String
-  subscriptionType      String
-  transactionId         String   @unique
-  premium               Boolean   @default(false)
-  subscriptionExpiresAt DateTime?
-
-  user User @relation(fields: [userId], references: [id])
-
-  createdAt DateTime @default(now())
-}
-
-model Admin {
-  id           String   @id @default(uuid())
-  name         String
-  email        String   @unique
-  password     String
-  profilePhoto String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@map("admins")
 }

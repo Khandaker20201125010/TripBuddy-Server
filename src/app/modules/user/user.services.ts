@@ -46,11 +46,13 @@ const registerUser = async (payload: any, req: Request) => {
 const getAllUsers = async (params: any, options: IOptions) => {
   const { page, limit, skip, sortBy, sortOrder } =
     paginationHelper.calculatePagination(options);
+    
   const { searchTerm, ...filterData } = params;
 
   const andConditions: Prisma.UserWhereInput[] = [];
 
-  if (searchTerm) {
+  // ✅ Fix: Only add search conditions if searchTerm actually has a value
+  if (searchTerm && searchTerm.trim() !== "") {
     andConditions.push({
       OR: userSearchableFields.map((field) => ({
         [field]: {
@@ -61,42 +63,35 @@ const getAllUsers = async (params: any, options: IOptions) => {
     });
   }
 
+  // ✅ Fix: Ensure filter keys actually exist and have values
   if (Object.keys(filterData).length > 0) {
-    andConditions.push({
-      AND: Object.keys(filterData).map((key) => ({
-        [key]: {
-          equals: (filterData as any)[key],
-        },
-      })),
-    });
+    const filters = Object.keys(filterData).map((key) => ({
+      [key]: {
+        equals: (filterData as any)[key],
+      },
+    }));
+    andConditions.push({ AND: filters });
   }
 
   const whereConditions: Prisma.UserWhereInput =
-    andConditions.length > 0
-      ? {
-          AND: andConditions,
-        }
-      : {};
+    andConditions.length > 0 ? { AND: andConditions } : {};
 
   const result = await prisma.user.findMany({
     skip,
     take: limit,
-
     where: whereConditions,
     orderBy: {
-      [sortBy]: sortOrder,
+      // ✅ Fix: Default to 'createdAt' if sortBy is missing
+      [sortBy || "createdAt"]: sortOrder || "desc",
     },
   });
 
   const total = await prisma.user.count({
     where: whereConditions,
   });
+
   return {
-    meta: {
-      page,
-      limit,
-      total,
-    },
+    meta: { page, limit, total },
     data: result,
   };
 };
@@ -151,26 +146,71 @@ const getUserProfile = async (id: string) => {
 
 
 const updateUserProfile = async (id: string, req: Request) => {
-  const payload = req.body;
+  // 1. Parse the text data from the 'data' field sent by frontend
+  const bodyData = req.body.data ? JSON.parse(req.body.data) : req.body;
 
-  // Handle new profile image
+  const updateData: any = { ...bodyData };
+
+  // 2. Handle Cloudinary Upload
   if (req.file) {
     const upload = await fileUploader.uploadToCloudinary(req.file);
-    payload.profileImage = upload.secure_url;
-    payload.profileImageFileName = upload.public_id;
+    updateData.profileImage = upload.secure_url;
+    updateData.profileImageFileName = upload.public_id;
   }
 
+  // 3. Update Database
   return prisma.user.update({
     where: { id },
-    data: payload,
+    data: updateData,
   });
 };
 
+const getTopRatedTravelers = async () => {
+  return await prisma.user.findMany({
+    where: {
+      status: "ACTIVE", 
+      // rating: { gt: 0 } <--- Remove or comment this out to see users before they have reviews
+    },
+    orderBy: [
+      { rating: 'desc' },
+      { createdAt: 'desc' } // Secondary sort so new users show up if ratings are all 0
+    ],
+    take: 10,
+    select: {
+      id: true,
+      name: true,
+      profileImage: true,
+      rating: true,
+      bio: true,
+      _count: {
+        select: { travelPlans: true }
+      }
+    }
+  });
+};
+const getAdminDashboardStats = async () => {
+  const totalUsers = await prisma.user.count();
+  const totalTravelPlans = await prisma.travelPlan.count();
+  const activeBuddies = await prisma.travelBuddy.count({
+    where: { status: 'APPROVED' }
+  });
+  const bannedUsers = await prisma.user.count({
+    where: { status: 'BANNED' }
+  });
 
+  return {
+    totalUsers,
+    totalTravelPlans,
+    activeBuddies,
+    bannedUsers
+  };
+};
 export const UserService = {
   registerUser,
   getUserProfile,
   updateUserProfile,
   getAllUsers,
   createAdmin,
+  getTopRatedTravelers,
+  getAdminDashboardStats,
 };

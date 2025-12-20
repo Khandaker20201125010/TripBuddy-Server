@@ -119,24 +119,36 @@ const getAllTravelPlans = async (params: any, options: IOptions) => {
 const getSingleTravelPlan = async (id: string) => {
   const plan = await prisma.travelPlan.findUnique({
     where: { id },
-    include: { user: true },
+    include: { 
+      user: true, // The Host details
+      buddies: true, // REQUIRED: To check if current user is APPROVED
+      reviews: { // REQUIRED: To display existing reviews
+        include: {
+            reviewer: true // To show name/image of reviewer
+        },
+        orderBy: {
+            createdAt: 'desc'
+        }
+      } 
+    },
   });
 
   if (!plan) throw new ApiError(httpStatus.NOT_FOUND, "Travel Plan not found");
   return plan;
 };
-
 const updateTravelPlan = async (
   id: string,
   userId: string,
   payload: any,
+  userRole: string,
   file?: Express.Multer.File
 ) => {
   const existing = await prisma.travelPlan.findUnique({ where: { id } });
 
   if (!existing) throw new ApiError(404, "Travel Plan not found");
-  if (existing.userId !== userId)
+ if (existing.userId !== userId && userRole !== 'ADMIN') {
     throw new ApiError(403, "Unauthorized to update");
+  };
 
   let imageUrl = existing.image;
 
@@ -165,15 +177,22 @@ const updateTravelPlan = async (
   });
 };
 
-const deleteTravelPlan = async (id: string, userId: string) => {
+const deleteTravelPlan = async (id: string, userId: string, userRole: string) => {
   const existing = await prisma.travelPlan.findUnique({ where: { id } });
-  if (!existing) throw new ApiError(404, "Not found");
-  if (existing.userId !== userId)
-    throw new ApiError(403, "Unauthorized to delete");
+  
+  if (!existing) throw new ApiError(404, "Travel Plan not found");
 
-  await prisma.travelPlan.delete({ where: { id } });
+  // Allow if user is the OWNER OR user is an ADMIN
+  const isOwner = existing.userId === userId;
+  const isAdmin = userRole === 'ADMIN';
 
-  return { message: "Travel Plan deleted successfully" };
+  if (!isOwner && !isAdmin) {
+    throw new ApiError(403, "Unauthorized to delete this plan");
+  }
+
+  return await prisma.travelPlan.delete({ 
+    where: { id } 
+  });
 };
 
 const matchTravelPlans = async (filters: any) => {
@@ -311,13 +330,101 @@ const getMyTravelPlans = async (userId: string) => {
   const plans = await prisma.travelPlan.findMany({
     where: { userId },
     orderBy: { startDate: "asc" },
-    include: { user: true },
+    include: { 
+       user: true, 
+       buddies: {
+         include: { user: true } // Fetches requester profile info
+       } 
+    },
   });
 
   return plans.map((plan) => ({
     ...plan,
     status: getPlanStatus(plan.startDate, plan.endDate),
   }));
+};
+const requestJoinTrip = async (travelPlanId: string, userId: string) => {
+    const plan = await prisma.travelPlan.findUnique({ where: { id: travelPlanId } });
+    
+    if (!plan) throw new ApiError(httpStatus.NOT_FOUND, "Plan not found");
+    if (plan.userId === userId) throw new ApiError(httpStatus.BAD_REQUEST, "You cannot join your own trip");
+  
+    // Check if request already exists
+    const existing = await prisma.travelBuddy.findUnique({
+       where: { travelPlanId_userId: { travelPlanId, userId }}
+    });
+  
+    if (existing) throw new ApiError(httpStatus.BAD_REQUEST, "Request already sent or processed");
+  
+    // Create the Buddy entry
+    const result = await prisma.travelBuddy.create({
+      data: {
+        travelPlanId,
+        userId,
+        status: "PENDING"
+      }
+    });
+    
+    // Create Notification for Host
+    await prisma.notification.create({
+       data: {
+          userId: plan.userId,
+          message: "Someone requested to join your trip!",
+          type: "TRIP_JOIN_REQUEST",
+          travelPlanId: travelPlanId, // Added to match your schema
+          link: `/trips/${travelPlanId}`,
+          isRead: false
+       }
+    });
+  
+    return result;
+};
+
+const updateJoinRequestStatus = async (buddyId: string, hostId: string, status: 'APPROVED' | 'REJECTED') => {
+  const buddyRecord = await prisma.travelBuddy.findUnique({
+    where: { id: buddyId },
+    include: { travelPlan: true }
+  });
+
+  if (!buddyRecord) throw new ApiError(httpStatus.NOT_FOUND, "Request not found");
+
+  if (buddyRecord.travelPlan.userId !== hostId) {
+    throw new ApiError(httpStatus.FORBIDDEN, "You are not the host of this trip");
+  }
+
+  const result = await prisma.travelBuddy.update({
+    where: { id: buddyId },
+    data: { status }
+  });
+
+  // ✅ FIX: Only send notification if it's APPROVED (matching your Enum)
+  // Or handle REJECTED using a different message but same Enum if needed.
+  if (status === 'APPROVED') {
+    await prisma.notification.create({
+      data: {
+        userId: buddyRecord.userId,
+        message: `Your request for ${buddyRecord.travelPlan.destination} was approved!`,
+        type: "TRIP_APPROVED", // This matches your Enum exactly
+        travelPlanId: buddyRecord.travelPlanId,
+        link: `/trips/${buddyRecord.travelPlanId}`,
+      }
+    });
+  }
+
+  return result;
+};
+
+// Update getMyTravelPlans to include buddies (needed for the UI)
+const getMyTravelPlansWithBuddies = async (userId: string) => {
+  return await prisma.travelPlan.findMany({
+    where: { userId },
+    include: {
+      buddies: {
+        include: { user: true } // Get requester details
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
 };
 
 export const TravelPlanService = {
@@ -330,4 +437,7 @@ export const TravelPlanService = {
   getAISuggestions,
   getRecommendedTravelers,
   getMyTravelPlans,
+  requestJoinTrip,
+  updateJoinRequestStatus,
+  getMyTravelPlansWithBuddies,
 };

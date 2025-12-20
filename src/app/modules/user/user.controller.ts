@@ -64,10 +64,32 @@ const createAdmin = catchAsync(async (req: Request, res: Response) => {
     })
 });
 
+const getTopRatedTravelers = catchAsync(async (req: Request, res: Response) => {
+  const result = await UserService.getTopRatedTravelers();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Top rated travelers retrieved successfully",
+    data: result,
+  });
+});
+const getAdminDashboardStats = catchAsync(async (req: Request, res: Response) => {
+  const result = await UserService.getAdminDashboardStats();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Admin statistics retrieved",
+    data: result,
+  });
+});
 export const UserController = {
   registerUser,
   getUserProfile,
   updateUserProfile,
   getAllUsers,
-  createAdmin
+  createAdmin,
+  getTopRatedTravelers,
+  getAdminDashboardStats,
 };

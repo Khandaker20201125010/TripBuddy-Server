@@ -35,13 +35,20 @@ router.post(
   UserController.registerUser
 );
 
+router.get("/top-rated", UserController.getTopRatedTravelers);
 // PROFILE
 router.get("/:id", UserController.getUserProfile);
+
+router.get(
+  "/admin/stats",
+  auth(Role.ADMIN), // Strictly protected
+  UserController.getAdminDashboardStats
+);
 
 // UPDATE
 router.patch(
   "/:id",
-  fileUploader.upload.single("profileImage"),   
+  fileUploader.upload.single("file"),   
   validateRequest(UserValidation.updateUserValidation),
   UserController.updateUserProfile
 );

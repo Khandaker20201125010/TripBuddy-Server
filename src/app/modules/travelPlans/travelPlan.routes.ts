@@ -28,17 +28,30 @@ router.get("/match", TravelPlanController.matchTravelPlans);
 router.get("/recommended", auth(Role.USER, Role.ADMIN), TravelPlanController.getRecommendedTravelersController);
 
 router.post("/suggestion", TravelPlanController.getAISuggestions);
+
+router.post(
+    "/request/:id",
+    auth(Role.USER, Role.ADMIN),
+    TravelPlanController.requestJoinTrip
+);
+
 // GET ALL
 router.get("/", TravelPlanController.getAllTravelPlans);
 
 // GET SINGLE
 router.get("/:id", TravelPlanController.getSingleTravelPlan);
 
+router.patch(
+    "/request-status/:buddyId",
+    auth(Role.USER, Role.ADMIN),
+    TravelPlanController.updateJoinRequestStatus
+);
+
 // UPDATE
 router.patch(
   "/:id",
   auth(Role.USER, Role.ADMIN),
-  fileUploader.upload.single("image"),
+  fileUploader.upload.single("file"),
   validateRequest(TravelPlanValidation.update),
   TravelPlanController.updateTravelPlan
 );
