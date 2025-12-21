@@ -43,6 +43,7 @@ model User {
   role                 Role       @default(USER)
   status               UserStatus @default(ACTIVE)
   bio                  String?
+  interests         String[]    @default([])
   visitedCountries     String[]   @default([])
   profileImage         String?
   profileImageFileName String?

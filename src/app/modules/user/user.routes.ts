@@ -13,7 +13,7 @@ const router = express.Router();
 
 router.get(
     "/",
-    auth(Role.ADMIN),
+    auth(Role.ADMIN,Role.USER),
     UserController.getAllUsers
 )
 router.post(
@@ -36,6 +36,8 @@ router.post(
 );
 
 router.get("/top-rated", UserController.getTopRatedTravelers);
+router.get("/recently-active", UserController.getRecentlyActiveUsers);
+router.get("/stats/regions", UserController.getRegionStats);
 // PROFILE
 router.get("/:id", UserController.getUserProfile);
 

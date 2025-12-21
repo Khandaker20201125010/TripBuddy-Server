@@ -6,7 +6,8 @@ import { fileUploader } from "../../helper/fileUploader";
 import { Request } from "express";
 import { Admin, Prisma, Role } from "@prisma/client";
 import { IOptions, paginationHelper } from "../../helper/paginationHelper";
-import { userSearchableFields } from "./user.constant";
+import { REGION_MAP, userSearchableFields } from "./user.constant";
+import { getRegionDefaultImage } from "../../helper/getRegionDefaultImage";
 
 const registerUser = async (payload: any, req: Request) => {
   const { name, email, password } = payload;
@@ -46,29 +47,69 @@ const registerUser = async (payload: any, req: Request) => {
 const getAllUsers = async (params: any, options: IOptions) => {
   const { page, limit, skip, sortBy, sortOrder } =
     paginationHelper.calculatePagination(options);
-    
-  const { searchTerm, ...filterData } = params;
 
+  const { searchTerm, destination, travelType, ...filterData } = params;
   const andConditions: Prisma.UserWhereInput[] = [];
 
-  // ✅ Fix: Only add search conditions if searchTerm actually has a value
+  // 1. General Search
   if (searchTerm && searchTerm.trim() !== "") {
     andConditions.push({
-      OR: userSearchableFields.map((field) => ({
-        [field]: {
-          contains: searchTerm,
-          mode: "insensitive",
-        },
-      })),
+      OR: [
+        { name: { contains: searchTerm, mode: "insensitive" } },
+        { email: { contains: searchTerm, mode: "insensitive" } },
+        { bio: { contains: searchTerm, mode: "insensitive" } },
+      ],
     });
   }
 
-  // ✅ Fix: Ensure filter keys actually exist and have values
+  // 2. Smart Destination Logic (Mapping regions to countries)
+  if (destination && destination.trim() !== "") {
+    const countriesInRegion = REGION_MAP[destination];
+
+    if (countriesInRegion) {
+      andConditions.push({
+        visitedCountries: {
+          hasSome: countriesInRegion,
+        },
+      });
+    } else {
+      andConditions.push({
+        visitedCountries: {
+          has: destination,
+        },
+      });
+    }
+  }
+
+  // 3. Optimized Travel Type & Interest Filtering
+  // This now checks BOTH the specific interests array AND the bio string
+  if (travelType && travelType.trim() !== "") {
+  const tags = travelType.split(",").map((tag: string) => tag.trim());
+  
+  // Create a search array that includes both Original and Lowercase versions
+  // This solves the case-sensitivity issue in Prisma's hasSome
+  const searchTags = [...new Set([...tags, ...tags.map(t => t.toLowerCase())])];
+  
+  andConditions.push({
+    OR: [
+      {
+        interests: {
+          hasSome: searchTags, // Array match (now casing-proof)
+        },
+      },
+      {
+        OR: tags.map((tag: string) => ({
+          bio: { contains: tag, mode: "insensitive" }, // Text search (always casing-proof)
+        })),
+      },
+    ],
+  });
+}
+
+  // 4. Strict Filters
   if (Object.keys(filterData).length > 0) {
     const filters = Object.keys(filterData).map((key) => ({
-      [key]: {
-        equals: (filterData as any)[key],
-      },
+      [key]: { equals: (filterData as any)[key] },
     }));
     andConditions.push({ AND: filters });
   }
@@ -81,14 +122,25 @@ const getAllUsers = async (params: any, options: IOptions) => {
     take: limit,
     where: whereConditions,
     orderBy: {
-      // ✅ Fix: Default to 'createdAt' if sortBy is missing
       [sortBy || "createdAt"]: sortOrder || "desc",
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      profileImage: true,
+      role: true,
+      status: true,
+      bio: true,
+      interests: true, // Included in selection
+      rating: true,
+      visitedCountries: true,
+      createdAt: true,
+      updatedAt: true,
     },
   });
 
-  const total = await prisma.user.count({
-    where: whereConditions,
-  });
+  const total = await prisma.user.count({ where: whereConditions });
 
   return {
     meta: { page, limit, total },
@@ -168,12 +220,15 @@ const updateUserProfile = async (id: string, req: Request) => {
 const getTopRatedTravelers = async () => {
   return await prisma.user.findMany({
     where: {
-      status: "ACTIVE", 
-      // rating: { gt: 0 } <--- Remove or comment this out to see users before they have reviews
+      status: "ACTIVE",
+      // ✅ This ensures only users who have been rated are shown
+      rating: {
+        gt: 0, 
+      },
     },
     orderBy: [
       { rating: 'desc' },
-      { createdAt: 'desc' } // Secondary sort so new users show up if ratings are all 0
+      { createdAt: 'desc' }
     ],
     take: 10,
     select: {
@@ -186,6 +241,22 @@ const getTopRatedTravelers = async () => {
         select: { travelPlans: true }
       }
     }
+  });
+};
+const getRecentlyActiveUsers = async () => {
+  return await prisma.user.findMany({
+    where: {
+      status: "ACTIVE",
+    },
+    orderBy: {
+      updatedAt: 'desc', // This tracks recent activity
+    },
+    take: 8, // Limit for the avatar stack
+    select: {
+      id: true,
+      name: true,
+      profileImage: true,
+    },
   });
 };
 const getAdminDashboardStats = async () => {
@@ -205,6 +276,40 @@ const getAdminDashboardStats = async () => {
     bannedUsers
   };
 };
+ const getRegionTravelerStats = async () => {
+  const stats = await Promise.all(
+    Object.keys(REGION_MAP).map(async (regionName) => {
+      const countries = REGION_MAP[regionName];
+      
+      const count = await prisma.user.count({
+        where: {
+          OR: [
+            {
+              // Check if any country in the REGION_MAP exists in user's visited list
+              visitedCountries: {
+                hasSome: countries
+              }
+            },
+            {
+              // Fallback: If the user literally typed the region name (e.g. "Asia")
+              visitedCountries: {
+                has: regionName
+              }
+            }
+          ]
+        }
+      });
+
+      return {
+        name: regionName,
+        count: count >= 1000 ? `${(count / 1000).toFixed(1)}k` : count.toString(),
+        image: getRegionDefaultImage(regionName)
+      };
+    })
+  );
+
+  return stats;
+};
 export const UserService = {
   registerUser,
   getUserProfile,
@@ -213,4 +318,6 @@ export const UserService = {
   createAdmin,
   getTopRatedTravelers,
   getAdminDashboardStats,
+  getRecentlyActiveUsers,
+  getRegionTravelerStats,
 };

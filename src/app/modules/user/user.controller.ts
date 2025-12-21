@@ -74,6 +74,16 @@ const getTopRatedTravelers = catchAsync(async (req: Request, res: Response) => {
     data: result,
   });
 });
+const getRecentlyActiveUsers = catchAsync(async (req: Request, res: Response) => {
+  const result = await UserService.getRecentlyActiveUsers();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Recently active users retrieved",
+    data: result,
+  });
+});
 const getAdminDashboardStats = catchAsync(async (req: Request, res: Response) => {
   const result = await UserService.getAdminDashboardStats();
 
@@ -81,6 +91,16 @@ const getAdminDashboardStats = catchAsync(async (req: Request, res: Response) =>
     statusCode: httpStatus.OK,
     success: true,
     message: "Admin statistics retrieved",
+    data: result,
+  });
+});
+
+const getRegionStats = catchAsync(async (req: Request, res: Response) => {
+  const result = await UserService.getRegionTravelerStats();
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Region stats retrieved",
     data: result,
   });
 });
@@ -92,4 +112,6 @@ export const UserController = {
   createAdmin,
   getTopRatedTravelers,
   getAdminDashboardStats,
+  getRecentlyActiveUsers,
+  getRegionStats,
 };

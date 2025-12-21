@@ -78,17 +78,17 @@ const updateTravelPlan = catchAsync(async (req: any, res) => {
   });
 });
 
-const getRecommendedTravelersController = catchAsync(async (req: Request & { user?: any }, res) => {
-  const userId = req.user?.id;
-  const recommended = await TravelPlanService.getRecommendedTravelers(userId);
+  const getRecommendedTravelersController = catchAsync(async (req: Request & { user?: any }, res) => {
+    const userId = req.user?.id;
+    const recommended = await TravelPlanService.getRecommendedTravelers(userId);
 
-  sendResponse(res, {
-    statusCode: 200,
-    success: true,
-    message: 'Recommended travelers fetched successfully',
-    data: recommended,
+    sendResponse(res, {
+      statusCode: 200,
+      success: true,
+      message: 'Recommended travelers fetched successfully',
+      data: recommended,
+    });
   });
-});
 
 
 const deleteTravelPlan = catchAsync(async (req: Request & { user?: any }, res: Response) => {

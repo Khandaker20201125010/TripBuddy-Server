@@ -1,10 +1,12 @@
 export const travelPlanSearchableFields = ["destination", "travelType"];
 
 export const travelPlanFilterableFields = [
-  "destination",
-  "travelType",
-  "minBudget",
-  "maxBudget",
+  "searchTerm",
+  "destination",  
+  "travelType",   
   "startDate",
   "endDate",
+  "minBudget",
+  "maxBudget",
+  "visibility"
 ];

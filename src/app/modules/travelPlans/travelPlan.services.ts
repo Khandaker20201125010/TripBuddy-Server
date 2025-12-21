@@ -1,7 +1,7 @@
 import { prisma } from "../../shared/prisma";
 import ApiError from "../../middlewares/ApiError";
 import httpStatus from "http-status";
-import { Prisma } from "@prisma/client";
+import { Prisma, User } from "@prisma/client";
 import { paginationHelper, IOptions } from "../../helper/paginationHelper";
 import { travelPlanSearchableFields } from "./travelPlan.constant";
 import { fileUploader } from "../../helper/fileUploader";
@@ -55,23 +55,66 @@ const getAllTravelPlans = async (params: any, options: IOptions) => {
 
   const {
     searchTerm,
+    destination,
     minBudget,
     maxBudget,
     startDate,
     endDate,
+    travelType,
     ...filterData
   } = params;
 
   const andConditions: Prisma.TravelPlanWhereInput[] = [];
 
-  if (searchTerm) {
+  // 1. Search Logic (Global Search)
+  if (searchTerm && searchTerm.trim() !== "") {
     andConditions.push({
-      OR: travelPlanSearchableFields.map((field) => ({
-        [field]: { contains: searchTerm, mode: "insensitive" },
-      })),
+      OR: [
+        { destination: { contains: searchTerm, mode: "insensitive" } },
+        { description: { contains: searchTerm, mode: "insensitive" } },
+        {
+          user: {
+            OR: [
+              { name: { contains: searchTerm, mode: "insensitive" } },
+              { email: { contains: searchTerm, mode: "insensitive" } },
+              { bio: { contains: searchTerm, mode: "insensitive" } },
+            ],
+          },
+        },
+      ],
     });
   }
 
+  // 2. Destination Logic
+  if (destination && destination.trim() !== "") {
+    andConditions.push({
+      destination: {
+        contains: destination,
+        mode: "insensitive",
+      },
+    });
+  }
+
+  // 3. Travel Type Logic
+  if (travelType && travelType.trim() !== "") {
+    const tags = travelType.split(",").map((tag: string) => tag.trim());
+    const searchTags = [...new Set([...tags, ...tags.map((t: string) => t.toLowerCase())])];
+
+    andConditions.push({
+      OR: [
+        { travelType: { in: searchTags } },
+        {
+          user: {
+            interests: {
+              hasSome: searchTags,
+            },
+          },
+        },
+      ],
+    });
+  }
+
+  // 4. Budget Filter
   if (minBudget || maxBudget) {
     andConditions.push({
       budget: {
@@ -81,6 +124,7 @@ const getAllTravelPlans = async (params: any, options: IOptions) => {
     });
   }
 
+  // 5. Date Filter
   if (startDate || endDate) {
     andConditions.push({
       startDate: {
@@ -92,26 +136,58 @@ const getAllTravelPlans = async (params: any, options: IOptions) => {
     });
   }
 
+  // 6. Strict Filters
   if (Object.keys(filterData).length > 0) {
     andConditions.push({
       AND: Object.keys(filterData).map((key) => ({
-        [key]: filterData[key],
+        [key]: {
+          equals: filterData[key],
+        },
       })),
     });
   }
 
-  const whereConditions =
+  const whereConditions: Prisma.TravelPlanWhereInput =
     andConditions.length > 0 ? { AND: andConditions } : {};
 
+  // --- ✅ FIXED PART STARTS HERE ---
+
+  // 1. Fetch Data with DISTINCT userId
+  // This ensures we only return ONE plan per User
   const result = await prisma.travelPlan.findMany({
     skip,
     take: limit,
     where: whereConditions,
-    orderBy: { [sortBy]: sortOrder },
-    include: { user: true },
+    distinct: ['userId'], // <--- THIS LINE PREVENTS DUPLICATES
+    orderBy: sortBy && sortOrder ? { [sortBy]: sortOrder } : { createdAt: 'desc' },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          profileImage: true,
+          bio: true,
+          interests: true,
+          rating: true,
+          status: true,
+          role: true
+        }
+      }
+    },
   });
 
-  const total = await prisma.travelPlan.count({ where: whereConditions });
+  // 2. Calculate Total Count properly for Pagination
+  // Since we are using 'distinct', standard .count() will give the wrong number (it counts plans, not users).
+  // We use groupBy to count unique users matching the criteria.
+  const groupedCount = await prisma.travelPlan.groupBy({
+    by: ['userId'],
+    where: whereConditions,
+  });
+  
+  const total = groupedCount.length;
+
+  // --- ✅ FIXED PART ENDS HERE ---
 
   return { meta: { page, limit, total }, data: result };
 };
@@ -223,25 +299,58 @@ const matchTravelPlans = async (filters: any) => {
   });
 };
 
-const getRecommendedTravelers = async (userId: string) => {
-  const currentUser = await prisma.user.findUnique({ where: { id: userId } });
-  if (!currentUser) return [];
+const getRecommendedTravelers = async (userId: string): Promise<User[]> => {
+  try {
+    // 1. Fetch current user safely
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { interests: true, visitedCountries: true }
+    });
 
-  const interests = currentUser.interests; 
+    // 2. Determine search criteria
+    const searchCriteria = (user?.interests && user.interests.length > 0) 
+      ? user.interests 
+      : (user?.visitedCountries || []);
 
-  const recommendedTravelers = await prisma.user.findMany({
-    where: {
-      id: { not: userId },
-      interests: { hasSome: interests },
-      status: "ACTIVE",
-    },
-    take: 6,
-    include: {
-      travelPlans: true,
-    },
-  });
+    let recommended: User[] = [];
 
-  return recommendedTravelers;
+    // 3. Smart Match (Only if criteria exists)
+    if (searchCriteria.length > 0) {
+      try {
+        recommended = await prisma.user.findMany({
+          where: {
+            id: { not: userId }, // Don't recommend myself
+            status: 'ACTIVE',
+            OR: [
+              { interests: { hasSome: searchCriteria } },
+              { visitedCountries: { hasSome: searchCriteria } }
+            ]
+          },
+          take: 3,
+          orderBy: { rating: 'desc' }
+        });
+      } catch (innerError) {
+        console.warn("Smart match query failed (likely DB mismatch), falling back.");
+      }
+    }
+
+    // 4. Fallback: If no smart matches, just get Top Rated Active Users
+    if (recommended.length === 0) {
+      recommended = await prisma.user.findMany({
+        where: {
+          id: { not: userId },
+          status: 'ACTIVE'
+        },
+        take: 3,
+        orderBy: { rating: 'desc' }
+      });
+    }
+
+    return recommended;
+  } catch (error) {
+    console.error("Critical Service Error:", error);
+    return []; // Return empty array so frontend doesn't break
+  }
 };
 
 const getAISuggestions = async (payload: { symptoms: string }) => {
