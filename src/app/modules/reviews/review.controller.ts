@@ -60,6 +60,19 @@ const deleteReview = catchAsync(async (req: any, res) => {
     data: result,
   });
 });
+const getPendingReview = catchAsync(async (req: any, res) => {
+  const result = await ReviewService.getPendingReview(req.user.id);
+  
+  // If no trip found, return null data, don't throw error
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Pending review check",
+    data: result, // will be null or the plan object
+  });
+});
+
+
 
 export const ReviewController = {
   createReview,
@@ -67,4 +80,5 @@ export const ReviewController = {
   getSingleReview,
   updateReview,
   deleteReview,
+  getPendingReview
 };

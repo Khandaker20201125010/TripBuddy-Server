@@ -148,11 +148,40 @@ const deleteReview = async (id: string, reviewerId: string) => {
   await prisma.review.delete({ where: { id } });
   return { message: "Review deleted successfully" };
 };
+const getPendingReview = async (userId: string) => {
+  const now = new Date();
 
+  // 1. Find a trip where:
+  // - It has ended
+  // - User is an APPROVED buddy
+  // - User has NOT created a review for it yet
+  const pendingTrip = await prisma.travelPlan.findFirst({
+    where: {
+      endDate: { lt: now }, // Trip is over
+      buddies: {
+        some: {
+          userId: userId,
+          status: "APPROVED"
+        }
+      },
+      reviews: {
+        none: {
+          reviewerId: userId // No review by me
+        }
+      }
+    },
+    include: {
+      user: true // Include host details for the modal
+    }
+  });
+
+  return pendingTrip;
+};
 export const ReviewService = {
   createReview,
   getAllReviews,
   getSingleReview,
   updateReview,
   deleteReview,
+  getPendingReview
 };

@@ -17,6 +17,7 @@ router.post(
 );
 
 router.get("/", ReviewController.getAllReviews);
+router.get("/pending", ReviewController.getPendingReview);
 router.get("/:id", ReviewController.getSingleReview);
 
 router.patch(

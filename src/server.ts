@@ -2,6 +2,7 @@ import { Server } from "http";
 import app from "./app";
 import config from "./app/config";
 import { ensureSuperAdmin } from "./app/utility/superAdmin";
+import { initCronJobs } from "./app/modules/cron/cron.services";
 
 
 async function bootstrap() {
@@ -10,7 +11,7 @@ async function bootstrap() {
   try {
     // Create Super Admin before server listens
     await ensureSuperAdmin();
-
+      initCronJobs();
     server = app.listen(config.port, () => {
       console.log(`🚀 Server is running on http://localhost:${config.port}`);
     });
