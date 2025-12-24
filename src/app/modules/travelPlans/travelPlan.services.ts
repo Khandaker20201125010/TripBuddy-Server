@@ -271,34 +271,115 @@ const deleteTravelPlan = async (id: string, userId: string, userRole: string) =>
   });
 };
 
-const matchTravelPlans = async (filters: any) => {
-  const { destination, startDate, endDate, travelType, searchTerm } = filters;
+const getCommunityStats = async () => {
+  const currentYear = new Date().getFullYear();
+  const startOfYear = new Date(`${currentYear}-01-01`);
+  const endOfYear = new Date(`${currentYear}-12-31`);
 
-  return prisma.travelPlan.findMany({
-    where: {
-      AND: [
-        searchTerm
-          ? {
-              OR: [
-                { destination: { contains: searchTerm, mode: "insensitive" } },
-                { travelType: { contains: searchTerm, mode: "insensitive" } },
-              ],
-            }
-          : {},
-        destination
-          ? { destination: { contains: destination, mode: "insensitive" } }
-          : {},
-        travelType
-          ? { travelType: { contains: travelType, mode: "insensitive" } }
-          : {},
-        startDate ? { startDate: { gte: new Date(startDate) } } : {},
-        endDate ? { endDate: { lte: new Date(endDate) } } : {},
-      ],
-    },
-    include: { user: true },
+  // A. Count Unique Travelers (Unique UserIds in TravelPlans)
+  const uniqueTravelers = await prisma.travelPlan.groupBy({
+    by: ['userId'],
   });
-};
 
+  // B. Count Unique Destinations
+  const uniqueDestinations = await prisma.travelPlan.groupBy({
+    by: ['destination'],
+  });
+
+  // C. Count Trips in Current Year
+  const currentYearTrips = await prisma.travelPlan.count({
+    where: {
+      startDate: {
+        gte: startOfYear,
+        lte: endOfYear
+      }
+    }
+  });
+
+  // D. Get Trending Destinations (Group by destination, count desc, top 5)
+  const trendingGroups = await prisma.travelPlan.groupBy({
+    by: ['destination'],
+    _count: {
+      destination: true
+    },
+    orderBy: {
+      _count: {
+        destination: 'desc'
+      }
+    },
+    take: 5 
+  });
+
+  // Format trending data for frontend
+  const trending = trendingGroups.map(group => ({
+    destination: group.destination,
+    count: group._count.destination
+  }));
+
+  return {
+    travelers: uniqueTravelers.length,
+    destinations: uniqueDestinations.length,
+    tripsThisYear: currentYearTrips,
+    trending
+  };
+};
+const matchTravelPlans = async (
+  filters: any,
+  options: { page?: number; limit?: number; sortBy?: string }, // Added sortBy
+  currentUserId?: string
+) => {
+  const { destination, startDate, endDate, travelType, searchTerm } = filters;
+  
+  const page = Number(options.page) || 1;
+  const limit = Number(options.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const andConditions: Prisma.TravelPlanWhereInput[] = [];
+
+  // ... [Keep your existing filter logic (User exclusion, Date, SearchTerm, etc.)] ...
+  if (currentUserId) andConditions.push({ userId: { not: currentUserId } });
+  if (!startDate && !endDate) andConditions.push({ endDate: { gte: new Date() } });
+  if (searchTerm) {
+    andConditions.push({
+      OR: [
+        { destination: { contains: searchTerm, mode: "insensitive" } },
+        { travelType: { contains: searchTerm, mode: "insensitive" } },
+      ],
+    });
+  }
+  if (destination) andConditions.push({ destination: { contains: destination, mode: "insensitive" } });
+  if (travelType && travelType !== "") andConditions.push({ travelType: { equals: travelType } });
+  if (startDate) andConditions.push({ startDate: { gte: new Date(startDate) } }); // Simplified for brevity
+  if (endDate) andConditions.push({ endDate: { lte: new Date(endDate) } });
+
+  const whereConditions: Prisma.TravelPlanWhereInput = andConditions.length > 0 ? { AND: andConditions } : {};
+
+  // --- SORTING LOGIC ---
+  let orderBy: Prisma.TravelPlanOrderByWithRelationInput = { createdAt: "desc" };
+
+  if (options.sortBy === "Date") {
+    orderBy = { startDate: "asc" }; // Soonest trips first
+  } else if (options.sortBy === "Destination") {
+    orderBy = { destination: "asc" }; // Alphabetical
+  } 
+  // Default is "Best Match" (Newest created)
+
+  const [data, total] = await Promise.all([
+    prisma.travelPlan.findMany({
+      where: whereConditions,
+      include: { user: true, buddies: true },
+      skip,
+      take: limit,
+      orderBy: orderBy, // Applied here
+    }),
+    prisma.travelPlan.count({ where: whereConditions }),
+  ]);
+
+  return {
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    data,
+  };
+};
 const getRecommendedTravelers = async (userId: string): Promise<User[]> => {
   try {
     // 1. Fetch current user safely
@@ -542,6 +623,7 @@ export const TravelPlanService = {
   getSingleTravelPlan,
   updateTravelPlan,
   deleteTravelPlan,
+  getCommunityStats,
   matchTravelPlans,
   getAISuggestions,
   getRecommendedTravelers,

@@ -7,6 +7,7 @@ import { travelPlanFilterableFields } from "./travelPlan.constant";
 import { fileUploader } from "../../helper/fileUploader";
 import { Request, Response } from "express";
 import ApiError from "../../middlewares/ApiError";
+import { AuthRequest } from "./travelPlan.interface";
 
 const createTravelPlan = catchAsync(
   async (req: Request & { user?: any }, res: Response) => {
@@ -107,14 +108,43 @@ const deleteTravelPlan = catchAsync(async (req: Request & { user?: any }, res: R
     data: result,
   });
 });
-const matchTravelPlans = catchAsync(async (req, res) => {
-  const result = await TravelPlanService.matchTravelPlans(req.query);
+const getCommunityStats = catchAsync(async (req: Request, res: Response) => {
+  const result = await TravelPlanService.getCommunityStats();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Community stats retrieved successfully",
+    data: result,
+  });
+});
+const matchTravelPlans = catchAsync(async (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+
+  // Extract query parameters with defaults to undefined for Prisma
+  const filters = {
+    searchTerm: authReq.query.searchTerm || undefined,
+    destination: authReq.query.destination || undefined,
+    startDate: authReq.query.startDate || undefined,
+    endDate: authReq.query.endDate || undefined,
+    travelType: authReq.query.travelType || undefined,
+  };
+
+  const options = {
+    page: Number(authReq.query.page) || 1,
+    limit: Number(authReq.query.limit) || 6,
+  };
+
+  const currentUserId = authReq.user?.id; 
+
+  const result = await TravelPlanService.matchTravelPlans(filters, options, currentUserId);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Matched travel plans retrieved successfully",
-    data: result,
+    meta: result.meta,
+    data: result.data,
   });
 });
 
@@ -179,6 +209,7 @@ export const TravelPlanController = {
   updateTravelPlan,
   deleteTravelPlan,
   getAISuggestions,
+  getCommunityStats,
   matchTravelPlans,
   getRecommendedTravelersController,
   getMyTravelPlans,

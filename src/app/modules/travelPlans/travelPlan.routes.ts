@@ -24,6 +24,7 @@ router.get(
 );
 
 router.get("/match", TravelPlanController.matchTravelPlans);
+router.get("/stats", TravelPlanController.getCommunityStats);
 
 router.get("/recommended", auth(Role.USER, Role.ADMIN), TravelPlanController.getRecommendedTravelersController);
 

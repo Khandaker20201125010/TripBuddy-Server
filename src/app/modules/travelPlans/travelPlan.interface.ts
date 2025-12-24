@@ -12,3 +12,11 @@ export interface ITravelPlan {
   description?: string;
   visibility?: boolean;
 }
+
+export interface AuthRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+    role: string;
+  }
+}
