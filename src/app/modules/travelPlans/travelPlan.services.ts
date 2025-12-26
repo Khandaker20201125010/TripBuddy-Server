@@ -8,11 +8,52 @@ import { fileUploader } from "../../helper/fileUploader";
 import { openai } from "../../helper/Open-Router";
 import { getPlanStatus } from "../../helper/getPlanStatus";
 
+const PLAN_LIMITS = {
+  FREE: 2,
+  EXPLORER: 5,
+  UNLIMITED: Infinity
+};
 const createTravelPlan = async (
   payload: any,
   userId: string,
   file?: Express.Multer.File
 ) => {
+  // 1. Check User Subscription and Limits
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { subscriptionType: true, subscriptionExpiresAt: true, role: true }
+  });
+
+  if (!user) {
+    throw new ApiError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  // Admin bypasses all limits
+  if (user.role !== 'ADMIN') {
+    const currentPlanCount = await prisma.travelPlan.count({
+      where: { userId }
+    });
+
+    const isSubscribed = user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > new Date();
+    const subType = isSubscribed ? user.subscriptionType : null;
+
+    let limit = PLAN_LIMITS.FREE;
+
+    if (subType === 'MONTHLY' || subType === 'YEARLY') {
+      limit = PLAN_LIMITS.UNLIMITED;
+    } else if (subType === 'EXPLORER') {
+      limit = PLAN_LIMITS.EXPLORER;
+    }
+
+    if (currentPlanCount >= limit) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN, 
+        `You have reached the limit of ${limit} plans for your current subscription. Please upgrade to create more.`
+      );
+    }
+  }
+
+  // 2. Proceed with Creation
   let imageUrl = null;
 
   if (file) {
@@ -42,14 +83,13 @@ const createTravelPlan = async (
       endDate: end,
       visibility: payload.visibility === true || payload.visibility === "true",
     },
-    // ✅ FIXED: Include user so frontend state updates correctly immediately
-   include: {
-        user: true 
+    include: {
+      user: true
     }
   });
 };
 
-const getAllTravelPlans = async (params: any, options: IOptions) => {
+const getAllTravelPlans = async (params: any, options: IOptions,currentUserId?: string) => {
   const { page, limit, skip, sortBy, sortOrder } =
     paginationHelper.calculatePagination(options);
 
@@ -171,7 +211,14 @@ const getAllTravelPlans = async (params: any, options: IOptions) => {
           interests: true,
           rating: true,
           status: true,
-          role: true
+          role: true,
+          sentConnections: currentUserId ? {
+            where: { receiverId: currentUserId }
+          } : false,
+          receivedConnections: currentUserId ? {
+            where: { senderId: currentUserId }
+          } : false
+          
         }
       }
     },

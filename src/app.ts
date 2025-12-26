@@ -9,6 +9,11 @@ import { webhookHandler } from "./app/modules/payments/payment.webhook";
 
 const app: Application = express();
 
+app.use(cors({
+    origin: 'http://localhost:3000',
+    credentials: true,
+    
+}));
 
 app.post(
   "/webhook",
@@ -17,11 +22,7 @@ app.post(
 );
 
 
-app.use(cors({
-    origin: 'http://localhost:3000',
-    credentials: true,
-    
-}));
+
 
 //parser
 app.use(express.json());

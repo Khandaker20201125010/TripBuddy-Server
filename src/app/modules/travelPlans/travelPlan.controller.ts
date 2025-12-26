@@ -21,6 +21,7 @@ const createTravelPlan = catchAsync(
         visibility: req.body.visibility === 'true'
     };
 
+    // Service will throw an error if limit is reached
     const result = await TravelPlanService.createTravelPlan(
       payload,
       req.user.id,
@@ -35,12 +36,13 @@ const createTravelPlan = catchAsync(
     });
   }
 );
-
 const getAllTravelPlans = catchAsync(async (req, res) => {
   const filters = pick(req.query, travelPlanFilterableFields);
   const options = pick(req.query, ["page", "limit", "sortBy", "sortOrder"]);
 
-  const result = await TravelPlanService.getAllTravelPlans(filters, options);
+  const user = (req as any).user;
+    const currentUserId = user?.id;
+  const result = await TravelPlanService.getAllTravelPlans(filters, options,currentUserId);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

@@ -32,12 +32,16 @@ const getAllUsers = catchAsync(async (req: Request, res: Response) => {
     })
 })
 const getUserProfile = catchAsync(async (req: Request, res: Response) => {
-  const result = await UserService.getUserProfile(req.params.id);
+  const { id } = req.params;
+
+  // IMPORTANT: We do NOT use req.user here. 
+  // This allows guests (unlogged users) to fetch the data.
+  const result = await UserService.getUserProfile(id);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: "User profile retrieved",
+    message: "User profile retrieved successfully",
     data: result,
   });
 });

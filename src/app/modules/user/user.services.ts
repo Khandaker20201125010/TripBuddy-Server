@@ -180,22 +180,47 @@ const createAdmin = async (req: Request): Promise<Admin> => {
   return result;
 };
 const getUserProfile = async (id: string) => {
+  // Check if user exists
   const user = await prisma.user.findUnique({
-    where: { id },
-     include: {
-      travelPlans: true,
-      reviewsGiven: true,
-      reviewsReceived: true,
+    where: { 
+      id: id 
+    },
+    include: {
+      travelPlans: {
+        where: { visibility: true },
+        orderBy: { startDate: 'desc' }
+      },
+      // Safely include joined trips (buddies)
+      joinedTrips: {
+        where: { status: 'APPROVED' },
+        include: {
+            travelPlan: true // Allows showing where they are going
+        }
+      },
+      reviewsReceived: {
+        include: {
+          reviewer: {
+            select: {
+              id: true,
+              name: true,
+              profileImage: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      },
     },
   });
 
   if (!user) {
-    throw new ApiError(httpStatus.NOT_FOUND, "User not found");
+    // This is the error triggering "Profile Not Found" on frontend
+    throw new ApiError(httpStatus.NOT_FOUND, "User profile not found in database");
   }
 
-  return user;
+  // Remove sensitive information
+  const { password, ...safeUserData } = user;
+  return safeUserData;
 };
-
 
 const updateUserProfile = async (id: string, req: Request) => {
   // 1. Parse the text data from the 'data' field sent by frontend

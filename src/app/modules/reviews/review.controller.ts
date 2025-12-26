@@ -60,18 +60,28 @@ const deleteReview = catchAsync(async (req: any, res) => {
     data: result,
   });
 });
-const getPendingReview = catchAsync(async (req: any, res) => {
-  const result = await ReviewService.getPendingReview(req.user.id);
-  
-  // If no trip found, return null data, don't throw error
+const getPendingReview = catchAsync(async (req: Request, res: Response) => {
+  const user = (req as any).user;
+
+  // If for some reason auth middleware passed but user is missing
+  if (!user?.id) {
+    return sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: "No user found",
+      data: null,
+    });
+  }
+
+  const result = await ReviewService.getPendingReview(user.id);
+
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: "Pending review check",
-    data: result, // will be null or the plan object
+    message: "Pending review fetched successfully",
+    data: result,
   });
 });
-
 
 
 export const ReviewController = {

@@ -1,7 +1,5 @@
 import express, { NextFunction, Request, Response } from "express";
-import {
-  UserValidation,
-} from "./user.validation";
+import { UserValidation } from "./user.validation";
 import { UserController } from "./user.controller";
 import validateRequest from "../../middlewares/validateRequest";
 import { fileUploader } from "../../helper/fileUploader";
@@ -10,12 +8,7 @@ import { Role } from "@prisma/client";
 
 const router = express.Router();
 
-
-router.get(
-    "/",
-    auth(Role.ADMIN,Role.USER),
-    UserController.getAllUsers
-)
+// --- ADMIN ROUTES ---
 router.post(
     "/create-admin",
     auth(Role.ADMIN),
@@ -26,8 +19,13 @@ router.post(
     }
 );
 
+router.get(
+  "/admin/stats",
+  auth(Role.ADMIN),
+  UserController.getAdminDashboardStats
+);
 
-// REGISTER (supports file)
+// --- USER MANAGEMENT ---
 router.post(
   "/register",
   fileUploader.upload.single("file"),
@@ -35,24 +33,28 @@ router.post(
   UserController.registerUser
 );
 
+router.get(
+    "/",
+    auth(Role.ADMIN, Role.USER),
+    UserController.getAllUsers
+);
+
+// --- SPECIFIC PUBLIC ROUTES (MUST BE BEFORE /:id) ---
 router.get("/top-rated", UserController.getTopRatedTravelers);
 router.get("/recently-active", UserController.getRecentlyActiveUsers);
 router.get("/stats/regions", UserController.getRegionStats);
-// PROFILE
-router.get("/:id", UserController.getUserProfile);
 
-router.get(
-  "/admin/stats",
-  auth(Role.ADMIN), // Strictly protected
-  UserController.getAdminDashboardStats
-);
-
-// UPDATE
+// --- UPDATE PROFILE ---
 router.patch(
   "/:id",
+  auth(Role.ADMIN, Role.USER), 
   fileUploader.upload.single("file"),   
   validateRequest(UserValidation.updateUserValidation),
   UserController.updateUserProfile
 );
+
+// --- PUBLIC PROFILE VIEW (DYNAMIC ROUTE - MUST BE LAST) ---
+// This handles requests like /user/123-abc-456
+router.get("/:id", UserController.getUserProfile);
 
 export const UserRoutes = router;

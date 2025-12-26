@@ -107,9 +107,28 @@ const getAllReviews = async (params: any, options: IOptions) => {
     take: limit,
     where: whereConditions,
     orderBy: { [sortBy]: sortOrder },
-    include: {
-      reviewer: true,
-      travelPlan: true,
+    // SECURE SELECTION: Only select safe fields for public display
+    select: {
+      id: true,
+      rating: true,
+      content: true,
+      createdAt: true,
+      reviewer: {
+        select: {
+          id: true,
+          name: true,
+          profileImage: true,
+          // Removed email, password, role, etc.
+        },
+      },
+      travelPlan: {
+        select: {
+          id: true,
+          destination: true,
+          startDate: true,
+          endDate: true,
+        },
+      },
     },
   });
 
@@ -151,13 +170,9 @@ const deleteReview = async (id: string, reviewerId: string) => {
 const getPendingReview = async (userId: string) => {
   const now = new Date();
 
-  // 1. Find a trip where:
-  // - It has ended
-  // - User is an APPROVED buddy
-  // - User has NOT created a review for it yet
   const pendingTrip = await prisma.travelPlan.findFirst({
     where: {
-      endDate: { lt: now }, // Trip is over
+      endDate: { lt: now }, // Trip has ended
       buddies: {
         some: {
           userId: userId,
@@ -166,12 +181,19 @@ const getPendingReview = async (userId: string) => {
       },
       reviews: {
         none: {
-          reviewerId: userId // No review by me
+          reviewerId: userId 
         }
       }
     },
     include: {
-      user: true // Include host details for the modal
+      // Use select inside include for the host details to prevent deep nesting issues
+      user: {
+        select: {
+          id: true,
+          name: true,
+          profileImage: true
+        }
+      }
     }
   });
 

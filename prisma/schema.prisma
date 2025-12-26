@@ -9,6 +9,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// --- ENUMS ---
 enum Role {
   USER
   ADMIN
@@ -34,6 +35,23 @@ enum NotificationType {
   LEAVE_REVIEW
 }
 
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum SubscriptionType {
+  EXPLORER
+  MONTHLY
+  YEARLY
+}
+enum ConnectionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 model User {
   id                   String     @id @default(uuid())
   name                 String
@@ -43,24 +61,67 @@ model User {
   role                 Role       @default(USER)
   status               UserStatus @default(ACTIVE)
   bio                  String?
-  interests         String[]    @default([])
+  interests            String[]   @default([])
   visitedCountries     String[]   @default([])
   profileImage         String?
   profileImageFileName String?
   rating               Float      @default(0)
-  
-  // Relations
-  travelPlans     TravelPlan[]
-  joinedTrips     TravelBuddy[] 
-  notifications   Notification[]
-  reviewsGiven    Review[]       @relation("Reviewer")
-  reviewsReceived Review[]       @relation("Reviewee")
+
+  premium               Boolean   @default(false)
+  subscriptionType      SubscriptionType?
+  subscriptionExpiresAt DateTime?
+  payments              Payment[] 
+
+  travelPlans       TravelPlan[]
+  joinedTrips       TravelBuddy[] 
+  notifications     Notification[]
+  reviewsGiven      Review[]       @relation("Reviewer")
+  reviewsReceived   Review[]       @relation("Reviewee")
+
+  sentConnections     Connection[] @relation("SentConnections")
+  receivedConnections Connection[] @relation("ReceivedConnections")
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("users")
 }
+
+model Connection {
+  id          String           @id @default(uuid())
+  senderId    String
+  receiverId  String
+  status      ConnectionStatus @default(PENDING)
+  
+  // Relations
+  sender      User             @relation("SentConnections", fields: [senderId], references: [id])
+  receiver    User             @relation("ReceivedConnections", fields: [receiverId], references: [id])
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([senderId, receiverId]) 
+  @@map("connections")
+}
+
+// --- NEW MODEL ---
+model Payment {
+  id                String           @id @default(uuid())
+  amount            Float
+  transactionId     String           @unique
+  status            PaymentStatus    @default(PENDING)
+  subscriptionType  SubscriptionType
+  
+  userId            String
+  user              User             @relation(fields: [userId], references: [id])
+
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@map("payments")
+}
+
+
 
 model TravelPlan {
   id          String   @id @default(uuid())
@@ -73,12 +134,9 @@ model TravelPlan {
   travelType  String
   description String?
   visibility  Boolean  @default(true)
-
- 
+  
   user          User           @relation(fields: [userId], references: [id])
-  
-  
-  buddies       TravelBuddy[]  
+  buddies       TravelBuddy[]
   reviews       Review[]
   notifications Notification[]
 
@@ -92,7 +150,6 @@ model TravelBuddy {
   userId       String
   status       BuddyStatus @default(PENDING)
 
-
   travelPlan TravelPlan @relation(fields: [travelPlanId], references: [id], onDelete: Cascade)
   user       User       @relation(fields: [userId], references: [id])
 
@@ -104,15 +161,14 @@ model TravelBuddy {
 
 model Notification {
   id           String           @id @default(uuid())
-  userId       String 
+  userId       String
   travelPlanId String?
   message      String
-  link         String? 
+  link         String?
   isRead       Boolean          @default(false)
   type         NotificationType
 
   user       User        @relation(fields: [userId], references: [id])
-
   travelPlan TravelPlan? @relation(fields: [travelPlanId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
@@ -128,7 +184,6 @@ model Review {
 
   reviewer   User       @relation("Reviewer", fields: [reviewerId], references: [id])
   reviewee   User       @relation("Reviewee", fields: [revieweeId], references: [id])
-  
   travelPlan TravelPlan @relation(fields: [travelPlanId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())

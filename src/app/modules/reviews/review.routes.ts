@@ -7,18 +7,26 @@ import { Role } from "@prisma/client";
 
 const router = express.Router();
 
-// All routes require logged-in user
+
+router.get(
+  "/pending", 
+  auth(Role.USER), 
+  ReviewController.getPendingReview
+);
+
+router.get("/", ReviewController.getAllReviews);
+router.get("/:id", ReviewController.getSingleReview);
+
+
 router.use(auth(Role.USER));
+
+
 
 router.post(
   "/",
   validateRequest(ReviewValidation.createReviewValidation),
   ReviewController.createReview
 );
-
-router.get("/", ReviewController.getAllReviews);
-router.get("/pending", ReviewController.getPendingReview);
-router.get("/:id", ReviewController.getSingleReview);
 
 router.patch(
   "/:id",
