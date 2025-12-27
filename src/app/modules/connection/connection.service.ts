@@ -93,9 +93,35 @@ const getMyBuddies = async (userId: string) => {
     }
   });
 };
+const getIncomingConnectionRequests = async (userId: string) => {
+  const requests = await prisma.connection.findMany({
+    where: {
+      receiverId: userId,
+      status: "PENDING"
+    },
+    include: {
+      sender: {
+        select: {
+          id: true,
+          name: true,
+          profileImage: true,
+          email: true
+        }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
 
+  return requests.map(request => ({
+    id: request.id,
+    status: request.status,
+    sender: request.sender,
+    createdAt: request.createdAt.toISOString()
+  }));
+};
 export const ConnectionService = {
   sendConnectionRequest,
   respondToRequest,
-  getMyBuddies
+  getMyBuddies,
+  getIncomingConnectionRequests
 };

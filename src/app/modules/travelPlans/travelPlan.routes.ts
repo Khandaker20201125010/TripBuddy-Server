@@ -47,6 +47,11 @@ router.patch(
     auth(Role.USER, Role.ADMIN),
     TravelPlanController.updateJoinRequestStatus
 );
+router.get(
+  "/my-plans/requests",
+  auth(Role.USER, Role.ADMIN),
+  TravelPlanController.getMyTripRequests
+);
 
 // UPDATE
 router.patch(

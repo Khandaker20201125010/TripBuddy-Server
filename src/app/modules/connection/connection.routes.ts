@@ -11,7 +11,11 @@ router.post(
   auth(Role.USER, Role.ADMIN),
   ConnectionController.sendRequest
 );
-
+router.get(
+  '/incoming',
+  auth(Role.USER, Role.ADMIN),
+  ConnectionController.getIncomingRequests
+);
 router.patch(
   '/respond/:connectionId',
   auth(Role.USER, Role.ADMIN),

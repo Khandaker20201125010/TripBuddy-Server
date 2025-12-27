@@ -160,6 +160,26 @@ const getAISuggestions = catchAsync(async (req: Request, res: Response) => {
     data: result,
   });
 });
+const getMyTripRequests = catchAsync(async (req: Request & { user?: any }, res: Response) => {
+  const userId = req.user?.id;
+  
+  if (!userId) {
+    throw new ApiError(401, "User ID not found in token");
+  }
+
+  console.log(`Fetching trip requests for user: ${userId}`); // Debug log
+  
+  const result = await TravelPlanService.getMyTripRequests(userId);
+  
+  console.log(`Found ${result.length} trip requests`); // Debug log
+  
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Trip requests retrieved successfully",
+    data: result,
+  });
+});
 const getMyTravelPlans = catchAsync(
   async (req: Request & { user?: any }, res: Response) => {
     const userId = req.user?.id; 
@@ -217,4 +237,6 @@ export const TravelPlanController = {
   getMyTravelPlans,
   requestJoinTrip,
   updateJoinRequestStatus,
+  getMyTripRequests
+   
 };

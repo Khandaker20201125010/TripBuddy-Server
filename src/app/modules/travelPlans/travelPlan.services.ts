@@ -11,7 +11,7 @@ import { getPlanStatus } from "../../helper/getPlanStatus";
 const PLAN_LIMITS = {
   FREE: 2,
   EXPLORER: 5,
-  UNLIMITED: Infinity
+  UNLIMITED: Infinity,
 };
 const createTravelPlan = async (
   payload: any,
@@ -21,7 +21,7 @@ const createTravelPlan = async (
   // 1. Check User Subscription and Limits
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { subscriptionType: true, subscriptionExpiresAt: true, role: true }
+    select: { subscriptionType: true, subscriptionExpiresAt: true, role: true },
   });
 
   if (!user) {
@@ -29,25 +29,27 @@ const createTravelPlan = async (
   }
 
   // Admin bypasses all limits
-  if (user.role !== 'ADMIN') {
+  if (user.role !== "ADMIN") {
     const currentPlanCount = await prisma.travelPlan.count({
-      where: { userId }
+      where: { userId },
     });
 
-    const isSubscribed = user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > new Date();
+    const isSubscribed =
+      user.subscriptionExpiresAt &&
+      new Date(user.subscriptionExpiresAt) > new Date();
     const subType = isSubscribed ? user.subscriptionType : null;
 
     let limit = PLAN_LIMITS.FREE;
 
-    if (subType === 'MONTHLY' || subType === 'YEARLY') {
+    if (subType === "MONTHLY" || subType === "YEARLY") {
       limit = PLAN_LIMITS.UNLIMITED;
-    } else if (subType === 'EXPLORER') {
+    } else if (subType === "EXPLORER") {
       limit = PLAN_LIMITS.EXPLORER;
     }
 
     if (currentPlanCount >= limit) {
       throw new ApiError(
-        httpStatus.FORBIDDEN, 
+        httpStatus.FORBIDDEN,
         `You have reached the limit of ${limit} plans for your current subscription. Please upgrade to create more.`
       );
     }
@@ -84,12 +86,16 @@ const createTravelPlan = async (
       visibility: payload.visibility === true || payload.visibility === "true",
     },
     include: {
-      user: true
-    }
+      user: true,
+    },
   });
 };
 
-const getAllTravelPlans = async (params: any, options: IOptions,currentUserId?: string) => {
+const getAllTravelPlans = async (
+  params: any,
+  options: IOptions,
+  currentUserId?: string
+) => {
   const { page, limit, skip, sortBy, sortOrder } =
     paginationHelper.calculatePagination(options);
 
@@ -138,7 +144,9 @@ const getAllTravelPlans = async (params: any, options: IOptions,currentUserId?: 
   // 3. Travel Type Logic
   if (travelType && travelType.trim() !== "") {
     const tags = travelType.split(",").map((tag: string) => tag.trim());
-    const searchTags = [...new Set([...tags, ...tags.map((t: string) => t.toLowerCase())])];
+    const searchTags = [
+      ...new Set([...tags, ...tags.map((t: string) => t.toLowerCase())]),
+    ];
 
     andConditions.push({
       OR: [
@@ -190,16 +198,16 @@ const getAllTravelPlans = async (params: any, options: IOptions,currentUserId?: 
   const whereConditions: Prisma.TravelPlanWhereInput =
     andConditions.length > 0 ? { AND: andConditions } : {};
 
-  // --- ✅ FIXED PART STARTS HERE ---
+  // --- FIXED QUERY WITH PROPER CONNECTION FETCHING ---
 
-  // 1. Fetch Data with DISTINCT userId
-  // This ensures we only return ONE plan per User
-  const result = await prisma.travelPlan.findMany({
+  // 1. Fetch travel plans
+  const plans = await prisma.travelPlan.findMany({
     skip,
     take: limit,
     where: whereConditions,
-    distinct: ['userId'], // <--- THIS LINE PREVENTS DUPLICATES
-    orderBy: sortBy && sortOrder ? { [sortBy]: sortOrder } : { createdAt: 'desc' },
+    distinct: ["userId"],
+    orderBy:
+      sortBy && sortOrder ? { [sortBy]: sortOrder } : { createdAt: "desc" },
     include: {
       user: {
         select: {
@@ -212,47 +220,111 @@ const getAllTravelPlans = async (params: any, options: IOptions,currentUserId?: 
           rating: true,
           status: true,
           role: true,
-          sentConnections: currentUserId ? {
-            where: { receiverId: currentUserId }
-          } : false,
-          receivedConnections: currentUserId ? {
-            where: { senderId: currentUserId }
-          } : false
-          
-        }
-      }
+          visitedCountries: true,
+          // We'll fetch connections separately
+        },
+      },
     },
   });
 
-  // 2. Calculate Total Count properly for Pagination
-  // Since we are using 'distinct', standard .count() will give the wrong number (it counts plans, not users).
-  // We use groupBy to count unique users matching the criteria.
+  // 2. Get all user IDs from the plans
+  const userIds = plans.map((plan) => plan.user?.id).filter(Boolean);
+
+  // 3. Fetch connections between current user and these users
+  let connections: any[] = [];
+
+  if (currentUserId && userIds.length > 0) {
+    connections = await prisma.connection.findMany({
+      where: {
+        OR: [
+          {
+            senderId: currentUserId,
+            receiverId: { in: userIds },
+          },
+          {
+            senderId: { in: userIds },
+            receiverId: currentUserId,
+          },
+        ],
+      },
+      select: {
+        id: true,
+        senderId: true,
+        receiverId: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  // 4. Map connections to users
+  const userConnectionsMap: Record<string, any> = {};
+
+  connections.forEach((conn) => {
+    // If current user is the sender
+    if (conn.senderId === currentUserId) {
+      userConnectionsMap[conn.receiverId] = {
+        id: conn.id,
+        status: conn.status,
+        direction: "sent", // Current user sent request to this user
+      };
+    }
+    // If current user is the receiver
+    else if (conn.receiverId === currentUserId) {
+      userConnectionsMap[conn.senderId] = {
+        id: conn.id,
+        status: conn.status,
+        direction: "received", // This user sent request to current user
+      };
+    }
+  });
+
+  // 5. Enhance plans with connection info
+  const enhancedPlans = plans.map((plan) => {
+    const user = plan.user;
+    const connectionInfo = user?.id ? userConnectionsMap[user.id] : null;
+
+    return {
+      ...plan,
+      user: user
+        ? {
+            ...user,
+            connectionInfo, // Add connection info to user object
+          }
+        : null,
+    };
+  });
+
+  // 6. Calculate total count (distinct users)
   const groupedCount = await prisma.travelPlan.groupBy({
-    by: ['userId'],
+    by: ["userId"],
     where: whereConditions,
   });
-  
+
   const total = groupedCount.length;
 
-  // --- ✅ FIXED PART ENDS HERE ---
-
-  return { meta: { page, limit, total }, data: result };
+  return {
+    meta: { page, limit, total },
+    data: enhancedPlans,
+  };
 };
 
 const getSingleTravelPlan = async (id: string) => {
   const plan = await prisma.travelPlan.findUnique({
     where: { id },
-    include: { 
+    include: {
       user: true, // The Host details
       buddies: true, // REQUIRED: To check if current user is APPROVED
-      reviews: { // REQUIRED: To display existing reviews
+      reviews: {
+        // REQUIRED: To display existing reviews
         include: {
-            reviewer: true // To show name/image of reviewer
+          reviewer: true, // To show name/image of reviewer
         },
         orderBy: {
-            createdAt: 'desc'
-        }
-      } 
+          createdAt: "desc",
+        },
+      },
     },
   });
 
@@ -269,9 +341,9 @@ const updateTravelPlan = async (
   const existing = await prisma.travelPlan.findUnique({ where: { id } });
 
   if (!existing) throw new ApiError(404, "Travel Plan not found");
- if (existing.userId !== userId && userRole !== 'ADMIN') {
+  if (existing.userId !== userId && userRole !== "ADMIN") {
     throw new ApiError(403, "Unauthorized to update");
-  };
+  }
 
   let imageUrl = existing.image;
 
@@ -282,11 +354,15 @@ const updateTravelPlan = async (
 
   const updatedData: any = {};
 
-  if (payload.destination !== undefined) updatedData.destination = payload.destination;
-  if (payload.travelType !== undefined) updatedData.travelType = payload.travelType;
-  if (payload.description !== undefined) updatedData.description = payload.description;
+  if (payload.destination !== undefined)
+    updatedData.destination = payload.destination;
+  if (payload.travelType !== undefined)
+    updatedData.travelType = payload.travelType;
+  if (payload.description !== undefined)
+    updatedData.description = payload.description;
   if (payload.visibility !== undefined)
-    updatedData.visibility = payload.visibility === true || payload.visibility === "true";
+    updatedData.visibility =
+      payload.visibility === true || payload.visibility === "true";
   if (payload.budget !== undefined) updatedData.budget = Number(payload.budget);
   if (payload.startDate) updatedData.startDate = new Date(payload.startDate);
   if (payload.endDate) updatedData.endDate = new Date(payload.endDate);
@@ -300,21 +376,25 @@ const updateTravelPlan = async (
   });
 };
 
-const deleteTravelPlan = async (id: string, userId: string, userRole: string) => {
+const deleteTravelPlan = async (
+  id: string,
+  userId: string,
+  userRole: string
+) => {
   const existing = await prisma.travelPlan.findUnique({ where: { id } });
-  
+
   if (!existing) throw new ApiError(404, "Travel Plan not found");
 
   // Allow if user is the OWNER OR user is an ADMIN
   const isOwner = existing.userId === userId;
-  const isAdmin = userRole === 'ADMIN';
+  const isAdmin = userRole === "ADMIN";
 
   if (!isOwner && !isAdmin) {
     throw new ApiError(403, "Unauthorized to delete this plan");
   }
 
-  return await prisma.travelPlan.delete({ 
-    where: { id } 
+  return await prisma.travelPlan.delete({
+    where: { id },
   });
 };
 
@@ -325,12 +405,12 @@ const getCommunityStats = async () => {
 
   // A. Count Unique Travelers (Unique UserIds in TravelPlans)
   const uniqueTravelers = await prisma.travelPlan.groupBy({
-    by: ['userId'],
+    by: ["userId"],
   });
 
   // B. Count Unique Destinations
   const uniqueDestinations = await prisma.travelPlan.groupBy({
-    by: ['destination'],
+    by: ["destination"],
   });
 
   // C. Count Trips in Current Year
@@ -338,36 +418,36 @@ const getCommunityStats = async () => {
     where: {
       startDate: {
         gte: startOfYear,
-        lte: endOfYear
-      }
-    }
+        lte: endOfYear,
+      },
+    },
   });
 
   // D. Get Trending Destinations (Group by destination, count desc, top 5)
   const trendingGroups = await prisma.travelPlan.groupBy({
-    by: ['destination'],
+    by: ["destination"],
     _count: {
-      destination: true
+      destination: true,
     },
     orderBy: {
       _count: {
-        destination: 'desc'
-      }
+        destination: "desc",
+      },
     },
-    take: 5 
+    take: 5,
   });
 
   // Format trending data for frontend
-  const trending = trendingGroups.map(group => ({
+  const trending = trendingGroups.map((group) => ({
     destination: group.destination,
-    count: group._count.destination
+    count: group._count.destination,
   }));
 
   return {
     travelers: uniqueTravelers.length,
     destinations: uniqueDestinations.length,
     tripsThisYear: currentYearTrips,
-    trending
+    trending,
   };
 };
 const matchTravelPlans = async (
@@ -376,7 +456,7 @@ const matchTravelPlans = async (
   currentUserId?: string
 ) => {
   const { destination, startDate, endDate, travelType, searchTerm } = filters;
-  
+
   const page = Number(options.page) || 1;
   const limit = Number(options.limit) || 10;
   const skip = (page - 1) * limit;
@@ -385,7 +465,8 @@ const matchTravelPlans = async (
 
   // ... [Keep your existing filter logic (User exclusion, Date, SearchTerm, etc.)] ...
   if (currentUserId) andConditions.push({ userId: { not: currentUserId } });
-  if (!startDate && !endDate) andConditions.push({ endDate: { gte: new Date() } });
+  if (!startDate && !endDate)
+    andConditions.push({ endDate: { gte: new Date() } });
   if (searchTerm) {
     andConditions.push({
       OR: [
@@ -394,21 +475,29 @@ const matchTravelPlans = async (
       ],
     });
   }
-  if (destination) andConditions.push({ destination: { contains: destination, mode: "insensitive" } });
-  if (travelType && travelType !== "") andConditions.push({ travelType: { equals: travelType } });
-  if (startDate) andConditions.push({ startDate: { gte: new Date(startDate) } }); // Simplified for brevity
+  if (destination)
+    andConditions.push({
+      destination: { contains: destination, mode: "insensitive" },
+    });
+  if (travelType && travelType !== "")
+    andConditions.push({ travelType: { equals: travelType } });
+  if (startDate)
+    andConditions.push({ startDate: { gte: new Date(startDate) } }); // Simplified for brevity
   if (endDate) andConditions.push({ endDate: { lte: new Date(endDate) } });
 
-  const whereConditions: Prisma.TravelPlanWhereInput = andConditions.length > 0 ? { AND: andConditions } : {};
+  const whereConditions: Prisma.TravelPlanWhereInput =
+    andConditions.length > 0 ? { AND: andConditions } : {};
 
   // --- SORTING LOGIC ---
-  let orderBy: Prisma.TravelPlanOrderByWithRelationInput = { createdAt: "desc" };
+  let orderBy: Prisma.TravelPlanOrderByWithRelationInput = {
+    createdAt: "desc",
+  };
 
   if (options.sortBy === "Date") {
     orderBy = { startDate: "asc" }; // Soonest trips first
   } else if (options.sortBy === "Destination") {
     orderBy = { destination: "asc" }; // Alphabetical
-  } 
+  }
   // Default is "Best Match" (Newest created)
 
   const [data, total] = await Promise.all([
@@ -432,13 +521,14 @@ const getRecommendedTravelers = async (userId: string): Promise<User[]> => {
     // 1. Fetch current user safely
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { interests: true, visitedCountries: true }
+      select: { interests: true, visitedCountries: true },
     });
 
     // 2. Determine search criteria
-    const searchCriteria = (user?.interests && user.interests.length > 0) 
-      ? user.interests 
-      : (user?.visitedCountries || []);
+    const searchCriteria =
+      user?.interests && user.interests.length > 0
+        ? user.interests
+        : user?.visitedCountries || [];
 
     let recommended: User[] = [];
 
@@ -448,17 +538,19 @@ const getRecommendedTravelers = async (userId: string): Promise<User[]> => {
         recommended = await prisma.user.findMany({
           where: {
             id: { not: userId }, // Don't recommend myself
-            status: 'ACTIVE',
+            status: "ACTIVE",
             OR: [
               { interests: { hasSome: searchCriteria } },
-              { visitedCountries: { hasSome: searchCriteria } }
-            ]
+              { visitedCountries: { hasSome: searchCriteria } },
+            ],
           },
           take: 3,
-          orderBy: { rating: 'desc' }
+          orderBy: { rating: "desc" },
         });
       } catch (innerError) {
-        console.warn("Smart match query failed (likely DB mismatch), falling back.");
+        console.warn(
+          "Smart match query failed (likely DB mismatch), falling back."
+        );
       }
     }
 
@@ -467,10 +559,10 @@ const getRecommendedTravelers = async (userId: string): Promise<User[]> => {
       recommended = await prisma.user.findMany({
         where: {
           id: { not: userId },
-          status: 'ACTIVE'
+          status: "ACTIVE",
         },
         take: 3,
-        orderBy: { rating: 'desc' }
+        orderBy: { rating: "desc" },
       });
     }
 
@@ -564,79 +656,116 @@ The JSON format MUST be:
 };
 
 const getMyTravelPlans = async (userId: string) => {
+  console.log(`[Service] Getting travel plans for user: ${userId}`);
+
   const plans = await prisma.travelPlan.findMany({
     where: { userId },
     orderBy: { startDate: "asc" },
-    include: { 
-       user: true, 
-       buddies: {
-         include: { user: true } // Fetches requester profile info
-       } 
+    include: {
+      user: true,
+      buddies: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              profileImage: true,
+              email: true,
+            },
+          },
+        },
+      },
     },
   });
 
-  return plans.map((plan) => ({
+  console.log(`[Service] Found ${plans.length} plans`);
+
+  const result = plans.map((plan) => ({
     ...plan,
     status: getPlanStatus(plan.startDate, plan.endDate),
   }));
-};
-const requestJoinTrip = async (travelPlanId: string, userId: string) => {
-    const plan = await prisma.travelPlan.findUnique({ where: { id: travelPlanId } });
-    
-    if (!plan) throw new ApiError(httpStatus.NOT_FOUND, "Plan not found");
-    if (plan.userId === userId) throw new ApiError(httpStatus.BAD_REQUEST, "You cannot join your own trip");
-  
-    // Check if request already exists
-    const existing = await prisma.travelBuddy.findUnique({
-       where: { travelPlanId_userId: { travelPlanId, userId }}
-    });
-  
-    if (existing) throw new ApiError(httpStatus.BAD_REQUEST, "Request already sent or processed");
-  
-    // Create the Buddy entry
-    const result = await prisma.travelBuddy.create({
-      data: {
-        travelPlanId,
-        userId,
-        status: "PENDING"
-      }
-    });
-    
-    // Create Notification for Host
-    await prisma.notification.create({
-       data: {
-          userId: plan.userId,
-          message: "Someone requested to join your trip!",
-          type: "TRIP_JOIN_REQUEST",
-          travelPlanId: travelPlanId, // Added to match your schema
-          link: `/trips/${travelPlanId}`,
-          isRead: false
-       }
-    });
-  
-    return result;
-};
 
-const updateJoinRequestStatus = async (buddyId: string, hostId: string, status: 'APPROVED' | 'REJECTED') => {
-  const buddyRecord = await prisma.travelBuddy.findUnique({
-    where: { id: buddyId },
-    include: { travelPlan: true }
+  // Debug: Check if buddies are included
+  result.forEach((plan) => {
+    console.log(
+      `Plan ${plan.destination}: ${plan.buddies?.length || 0} buddies`
+    );
   });
 
-  if (!buddyRecord) throw new ApiError(httpStatus.NOT_FOUND, "Request not found");
+  return result;
+};
+const requestJoinTrip = async (travelPlanId: string, userId: string) => {
+  const plan = await prisma.travelPlan.findUnique({
+    where: { id: travelPlanId },
+  });
+
+  if (!plan) throw new ApiError(httpStatus.NOT_FOUND, "Plan not found");
+  if (plan.userId === userId)
+    throw new ApiError(httpStatus.BAD_REQUEST, "You cannot join your own trip");
+
+  // Check if request already exists
+  const existing = await prisma.travelBuddy.findUnique({
+    where: { travelPlanId_userId: { travelPlanId, userId } },
+  });
+
+  if (existing)
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      "Request already sent or processed"
+    );
+
+  // Create the Buddy entry
+  const result = await prisma.travelBuddy.create({
+    data: {
+      travelPlanId,
+      userId,
+      status: "PENDING",
+    },
+  });
+
+  // Create Notification for Host
+  await prisma.notification.create({
+    data: {
+      userId: plan.userId,
+      message: "Someone requested to join your trip!",
+      type: "TRIP_JOIN_REQUEST",
+      travelPlanId: travelPlanId, // Added to match your schema
+      link: `/trips/${travelPlanId}`,
+      isRead: false,
+    },
+  });
+
+  return result;
+};
+
+const updateJoinRequestStatus = async (
+  buddyId: string,
+  hostId: string,
+  status: "APPROVED" | "REJECTED"
+) => {
+  const buddyRecord = await prisma.travelBuddy.findUnique({
+    where: { id: buddyId },
+    include: { travelPlan: true },
+  });
+
+  if (!buddyRecord)
+    throw new ApiError(httpStatus.NOT_FOUND, "Request not found");
 
   if (buddyRecord.travelPlan.userId !== hostId) {
-    throw new ApiError(httpStatus.FORBIDDEN, "You are not the host of this trip");
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      "You are not the host of this trip"
+    );
   }
 
   const result = await prisma.travelBuddy.update({
     where: { id: buddyId },
-    data: { status }
+    data: { status },
   });
 
   // ✅ FIX: Only send notification if it's APPROVED (matching your Enum)
   // Or handle REJECTED using a different message but same Enum if needed.
-  if (status === 'APPROVED') {
+  if (status === "APPROVED") {
     await prisma.notification.create({
       data: {
         userId: buddyRecord.userId,
@@ -644,23 +773,69 @@ const updateJoinRequestStatus = async (buddyId: string, hostId: string, status: 
         type: "TRIP_APPROVED", // This matches your Enum exactly
         travelPlanId: buddyRecord.travelPlanId,
         link: `/trips/${buddyRecord.travelPlanId}`,
-      }
+      },
     });
   }
 
   return result;
 };
 
+const getMyTripRequests = async (userId: string) => {
+  // Get all pending join requests for user's plans
+  const requests = await prisma.travelBuddy.findMany({
+    where: {
+      travelPlan: {
+        userId: userId, // Only plans where user is the host
+      },
+      status: "PENDING", // Only pending requests
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          profileImage: true,
+          email: true,
+        },
+      },
+      travelPlan: {
+        select: {
+          id: true,
+          destination: true,
+          startDate: true,
+          endDate: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  // Transform to match your TripRequest interface
+  return requests.map((request) => ({
+    id: request.id, // This is the buddyId
+    status: request.status,
+    user: request.user,
+    travelPlan: {
+      id: request.travelPlan.id,
+      destination: request.travelPlan.destination,
+      startDate: request.travelPlan.startDate.toISOString(),
+      endDate: request.travelPlan.endDate?.toISOString(),
+    },
+    createdAt: request.createdAt.toISOString(),
+  }));
+};
 // Update getMyTravelPlans to include buddies (needed for the UI)
 const getMyTravelPlansWithBuddies = async (userId: string) => {
   return await prisma.travelPlan.findMany({
     where: { userId },
     include: {
       buddies: {
-        include: { user: true } // Get requester details
-      }
+        where: { status: "PENDING" }, // Only show pending requests in ManageRequests
+        include: { user: true },
+      },
+      user: true,
     },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: "desc" },
   });
 };
 
@@ -678,4 +853,5 @@ export const TravelPlanService = {
   requestJoinTrip,
   updateJoinRequestStatus,
   getMyTravelPlansWithBuddies,
+  getMyTripRequests,
 };

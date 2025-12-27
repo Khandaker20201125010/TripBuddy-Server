@@ -45,8 +45,21 @@ const updateStatus = catchAsync(async (req: Request, res: Response) => {
     data: result
   });
 });
+const getIncomingRequests = catchAsync(async (req: Request, res: Response) => {
+  const userId = (req as any).user.id;
+  
+  const result = await ConnectionService.getIncomingConnectionRequests(userId);
+  
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Incoming connection requests retrieved successfully",
+    data: result
+  });
+});
 
 export const ConnectionController = {
   sendRequest,
-  updateStatus
+  updateStatus,
+  getIncomingRequests
 };
