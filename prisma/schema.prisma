@@ -66,11 +66,13 @@ model User {
   profileImage         String?
   profileImageFileName String?
   rating               Float      @default(0)
-
+  contactNumber        String?
   premium               Boolean   @default(false)
   subscriptionType      SubscriptionType?
   subscriptionExpiresAt DateTime?
   payments              Payment[] 
+
+   isSuperAdmin         Boolean    @default(false)
 
   travelPlans       TravelPlan[]
   joinedTrips       TravelBuddy[] 

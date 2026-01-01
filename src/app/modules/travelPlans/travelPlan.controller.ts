@@ -18,14 +18,14 @@ const createTravelPlan = catchAsync(
     const payload = {
         ...req.body,
         budget: req.body.budget ? Number(req.body.budget) : 0,
-        visibility: req.body.visibility === 'true'
+        visibility: req.body.visibility === 'true' || req.body.visibility === true
     };
 
     // Service will throw an error if limit is reached
     const result = await TravelPlanService.createTravelPlan(
       payload,
       req.user.id,
-      req.file
+      req.file // Make sure this is passed
     );
 
     sendResponse(res, {
@@ -121,23 +121,23 @@ const getCommunityStats = catchAsync(async (req: Request, res: Response) => {
   });
 });
 const matchTravelPlans = catchAsync(async (req: Request, res: Response) => {
-  const authReq = req as AuthRequest;
-
-  // Extract query parameters with defaults to undefined for Prisma
+  // 1. Extract filters
   const filters = {
-    searchTerm: authReq.query.searchTerm || undefined,
-    destination: authReq.query.destination || undefined,
-    startDate: authReq.query.startDate || undefined,
-    endDate: authReq.query.endDate || undefined,
-    travelType: authReq.query.travelType || undefined,
+    searchTerm: req.query.searchTerm as string | undefined,
+    destination: req.query.destination as string | undefined,
+    startDate: req.query.startDate as string | undefined,
+    endDate: req.query.endDate as string | undefined,
+    travelType: req.query.travelType as string | undefined,
   };
 
+  // 2. Extract pagination and sorting (Ensure strict types)
   const options = {
-    page: Number(authReq.query.page) || 1,
-    limit: Number(authReq.query.limit) || 6,
+    page: req.query.page ? parseInt(req.query.page as string) : 1,
+    limit: req.query.limit ? parseInt(req.query.limit as string) : 6,
+    sortBy: (req.query.sortBy as string) || "Best Match",
   };
 
-  const currentUserId = authReq.user?.id; 
+  const currentUserId = (req as any).user?.id || undefined;
 
   const result = await TravelPlanService.matchTravelPlans(filters, options, currentUserId);
 

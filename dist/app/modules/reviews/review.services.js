@@ -30,10 +30,64 @@ const http_status_1 = __importDefault(require("http-status"));
 const paginationHelper_1 = require("../../helper/paginationHelper");
 const review_constant_1 = require("./review.constant");
 const createReview = (payload, reviewerId) => __awaiter(void 0, void 0, void 0, function* () {
-    const review = yield prisma_1.prisma.review.create({
-        data: Object.assign(Object.assign({}, payload), { reviewerId }),
+    const travelPlan = yield prisma_1.prisma.travelPlan.findUnique({
+        where: { id: payload.travelPlanId },
     });
-    return review;
+    if (!travelPlan)
+        throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Travel plan not found");
+    // 1. Check if the trip has actually ended
+    const now = new Date();
+    if (new Date(travelPlan.endDate) > now) {
+        throw new ApiError_1.default(http_status_1.default.BAD_REQUEST, "You can only review a trip after it has ended.");
+    }
+    const revieweeId = travelPlan.userId;
+    // 2. Prevent Self-Review
+    if (revieweeId === reviewerId) {
+        throw new ApiError_1.default(http_status_1.default.BAD_REQUEST, "You cannot review your own travel plan");
+    }
+    // 3. STRICT CHECK: Is the user an APPROVED buddy for THIS trip?
+    const isBuddy = yield prisma_1.prisma.travelBuddy.findFirst({
+        where: {
+            travelPlanId: payload.travelPlanId,
+            userId: reviewerId,
+            status: 'APPROVED'
+        }
+    });
+    if (!isBuddy) {
+        throw new ApiError_1.default(http_status_1.default.FORBIDDEN, "Only travelers who were APPROVED for this trip can leave a review.");
+    }
+    // 4. Prevent Duplicate Reviews
+    const existingReview = yield prisma_1.prisma.review.findFirst({
+        where: {
+            travelPlanId: payload.travelPlanId,
+            reviewerId: reviewerId
+        }
+    });
+    if (existingReview) {
+        throw new ApiError_1.default(http_status_1.default.CONFLICT, "You have already reviewed this travel plan");
+    }
+    // 5. Transaction: Create Review & Update Average Rating
+    const result = yield prisma_1.prisma.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+        const review = yield tx.review.create({
+            data: {
+                reviewerId,
+                revieweeId,
+                travelPlanId: payload.travelPlanId,
+                rating: Number(payload.rating),
+                content: payload.content,
+            },
+        });
+        const avgRating = yield tx.review.aggregate({
+            where: { revieweeId },
+            _avg: { rating: true }
+        });
+        yield tx.user.update({
+            where: { id: revieweeId },
+            data: { rating: avgRating._avg.rating || 0 }
+        });
+        return review;
+    }));
+    return result;
 });
 const getAllReviews = (params, options) => __awaiter(void 0, void 0, void 0, function* () {
     const { page, limit, skip, sortBy, sortOrder } = paginationHelper_1.paginationHelper.calculatePagination(options);
@@ -57,9 +111,28 @@ const getAllReviews = (params, options) => __awaiter(void 0, void 0, void 0, fun
         take: limit,
         where: whereConditions,
         orderBy: { [sortBy]: sortOrder },
-        include: {
-            reviewer: true,
-            travelPlan: true,
+        // SECURE SELECTION: Only select safe fields for public display
+        select: {
+            id: true,
+            rating: true,
+            content: true,
+            createdAt: true,
+            reviewer: {
+                select: {
+                    id: true,
+                    name: true,
+                    profileImage: true,
+                    // Removed email, password, role, etc.
+                },
+            },
+            travelPlan: {
+                select: {
+                    id: true,
+                    destination: true,
+                    startDate: true,
+                    endDate: true,
+                },
+            },
         },
     });
     const total = yield prisma_1.prisma.review.count({ where: whereConditions });
@@ -80,19 +153,49 @@ const getSingleReview = (id) => __awaiter(void 0, void 0, void 0, function* () {
 const updateReview = (id, reviewerId, payload) => __awaiter(void 0, void 0, void 0, function* () {
     const existing = yield prisma_1.prisma.review.findUnique({ where: { id } });
     if (!existing)
-        throw new ApiError_1.default(404, "Review not found");
+        throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Review not found");
     if (existing.reviewerId !== reviewerId)
-        throw new ApiError_1.default(403, "Unauthorized to update this review");
+        throw new ApiError_1.default(http_status_1.default.FORBIDDEN, "Unauthorized to update this review");
     return prisma_1.prisma.review.update({ where: { id }, data: payload });
 });
 const deleteReview = (id, reviewerId) => __awaiter(void 0, void 0, void 0, function* () {
     const existing = yield prisma_1.prisma.review.findUnique({ where: { id } });
     if (!existing)
-        throw new ApiError_1.default(404, "Review not found");
+        throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Review not found");
     if (existing.reviewerId !== reviewerId)
-        throw new ApiError_1.default(403, "Unauthorized to delete this review");
+        throw new ApiError_1.default(http_status_1.default.FORBIDDEN, "Unauthorized to delete this review");
     yield prisma_1.prisma.review.delete({ where: { id } });
     return { message: "Review deleted successfully" };
+});
+const getPendingReview = (userId) => __awaiter(void 0, void 0, void 0, function* () {
+    const now = new Date();
+    const pendingTrip = yield prisma_1.prisma.travelPlan.findFirst({
+        where: {
+            endDate: { lt: now }, // Trip has ended
+            buddies: {
+                some: {
+                    userId: userId,
+                    status: "APPROVED"
+                }
+            },
+            reviews: {
+                none: {
+                    reviewerId: userId
+                }
+            }
+        },
+        include: {
+            // Use select inside include for the host details to prevent deep nesting issues
+            user: {
+                select: {
+                    id: true,
+                    name: true,
+                    profileImage: true
+                }
+            }
+        }
+    });
+    return pendingTrip;
 });
 exports.ReviewService = {
     createReview,
@@ -100,4 +203,5 @@ exports.ReviewService = {
     getSingleReview,
     updateReview,
     deleteReview,
+    getPendingReview
 };

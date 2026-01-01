@@ -14,29 +14,57 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fileUploader = void 0;
 const multer_1 = __importDefault(require("multer"));
-const path_1 = __importDefault(require("path"));
 const cloudinary_1 = require("cloudinary");
 const config_1 = __importDefault(require("../config"));
-const storage = multer_1.default.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, path_1.default.join(process.cwd(), "/uploads"));
+const stream_1 = __importDefault(require("stream"));
+// Create memory storage instead of disk storage
+const storage = multer_1.default.memoryStorage();
+const upload = (0, multer_1.default)({
+    storage: storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
     },
-    filename: function (req, file, cb) {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        cb(null, file.fieldname + '-' + uniqueSuffix);
-    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|webp/;
+        const mimetype = allowedTypes.test(file.mimetype);
+        if (mimetype) {
+            return cb(null, true);
+        }
+        else {
+            cb(new Error('Only images are allowed (jpeg, jpg, png, gif, webp)'));
+        }
+    }
 });
-const upload = (0, multer_1.default)({ storage: storage });
 const uploadToCloudinary = (file) => __awaiter(void 0, void 0, void 0, function* () {
     cloudinary_1.v2.config({
         cloud_name: config_1.default.cloudinary.cloud_name,
         api_key: config_1.default.cloudinary.api_key,
         api_secret: config_1.default.cloudinary.api_secret
     });
-    const uploadResult = yield cloudinary_1.v2.uploader.upload(file.path, {
-        public_id: file.filename,
+    return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary_1.v2.uploader.upload_stream({
+            public_id: `profile_${Date.now()}`,
+            folder: 'travel-buddy/profiles',
+            overwrite: true,
+        }, (error, result) => {
+            if (error) {
+                reject(error);
+            }
+            else if (result) {
+                resolve({
+                    secure_url: result.secure_url,
+                    public_id: result.public_id
+                });
+            }
+            else {
+                reject(new Error('Upload failed'));
+            }
+        });
+        // Create a readable stream from buffer
+        const bufferStream = new stream_1.default.PassThrough();
+        bufferStream.end(file.buffer);
+        bufferStream.pipe(uploadStream);
     });
-    return uploadResult;
 });
 exports.fileUploader = {
     upload,

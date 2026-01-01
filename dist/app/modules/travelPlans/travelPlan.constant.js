@@ -3,10 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.travelPlanFilterableFields = exports.travelPlanSearchableFields = void 0;
 exports.travelPlanSearchableFields = ["destination", "travelType"];
 exports.travelPlanFilterableFields = [
+    "searchTerm",
     "destination",
     "travelType",
-    "minBudget",
-    "maxBudget",
     "startDate",
     "endDate",
+    "minBudget",
+    "maxBudget",
+    "visibility"
 ];

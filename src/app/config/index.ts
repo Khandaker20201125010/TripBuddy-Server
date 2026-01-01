@@ -16,9 +16,9 @@ export default {
     access_secret: process.env.ACCESS_TOKEN_SECRET as string,
     refresh_secret: process.env.REFRESH_TOKEN_SECRET as string,
   },
-super_admin: {
-  email: process.env.SUPER_ADMIN_EMAIL as string,
-  password: process.env.SUPER_ADMIN_PASSWORD as string,
-},
- openRouterApiKey: process.env.OPENROUTER_API_KEY as string,
+  super_admin: {
+    email: process.env.SUPER_ADMIN_EMAIL as string,
+    password: process.env.SUPER_ADMIN_PASSWORD as string,
+  },
+  openRouterApiKey: process.env.OPENROUTER_API_KEY as string,
 };

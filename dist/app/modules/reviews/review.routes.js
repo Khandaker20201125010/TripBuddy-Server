@@ -11,11 +11,11 @@ const review_validation_1 = require("./review.validation");
 const auth_1 = __importDefault(require("../../middlewares/auth"));
 const client_1 = require("@prisma/client");
 const router = express_1.default.Router();
-// All routes require logged-in user
-router.use((0, auth_1.default)(client_1.Role.USER));
-router.post("/", (0, validateRequest_1.default)(review_validation_1.ReviewValidation.createReviewValidation), review_controller_1.ReviewController.createReview);
+router.get("/pending", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), review_controller_1.ReviewController.getPendingReview);
 router.get("/", review_controller_1.ReviewController.getAllReviews);
 router.get("/:id", review_controller_1.ReviewController.getSingleReview);
+router.use((0, auth_1.default)(client_1.Role.USER));
+router.post("/", (0, validateRequest_1.default)(review_validation_1.ReviewValidation.createReviewValidation), review_controller_1.ReviewController.createReview);
 router.patch("/:id", (0, validateRequest_1.default)(review_validation_1.ReviewValidation.updateReviewValidation), review_controller_1.ReviewController.updateReview);
 router.delete("/:id", review_controller_1.ReviewController.deleteReview);
 exports.ReviewRoutes = router;

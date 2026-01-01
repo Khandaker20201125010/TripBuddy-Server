@@ -29,8 +29,8 @@ const registerUser = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, v
     });
 }));
 const getAllUsers = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const filters = (0, pick_1.default)(req.query, user_constant_1.userFilterableFields); // searching , filtering
-    const options = (0, pick_1.default)(req.query, ["page", "limit", "sortBy", "sortOrder"]); // pagination and sorting
+    const filters = (0, pick_1.default)(req.query, user_constant_1.userFilterableFields);
+    const options = (0, pick_1.default)(req.query, ["page", "limit", "sortBy", "sortOrder"]);
     const result = yield user_services_1.UserService.getAllUsers(filters, options);
     (0, sendResponse_1.default)(res, {
         statusCode: 200,
@@ -41,11 +41,12 @@ const getAllUsers = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, vo
     });
 }));
 const getUserProfile = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const result = yield user_services_1.UserService.getUserProfile(req.params.id);
+    const { id } = req.params;
+    const result = yield user_services_1.UserService.getUserProfile(id);
     (0, sendResponse_1.default)(res, {
         statusCode: http_status_1.default.OK,
         success: true,
-        message: "User profile retrieved",
+        message: "User profile retrieved successfully",
         data: result,
     });
 }));
@@ -67,10 +68,50 @@ const createAdmin = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, vo
         data: result
     });
 }));
+const getTopRatedTravelers = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const result = yield user_services_1.UserService.getTopRatedTravelers();
+    (0, sendResponse_1.default)(res, {
+        statusCode: http_status_1.default.OK,
+        success: true,
+        message: "Top rated travelers retrieved successfully",
+        data: result,
+    });
+}));
+const getRecentlyActiveUsers = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const result = yield user_services_1.UserService.getRecentlyActiveUsers();
+    (0, sendResponse_1.default)(res, {
+        statusCode: http_status_1.default.OK,
+        success: true,
+        message: "Recently active users retrieved",
+        data: result,
+    });
+}));
+const getAdminDashboardStats = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const result = yield user_services_1.UserService.getAdminDashboardStats();
+    (0, sendResponse_1.default)(res, {
+        statusCode: http_status_1.default.OK,
+        success: true,
+        message: "Admin statistics retrieved",
+        data: result,
+    });
+}));
+const getRegionStats = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const result = yield user_services_1.UserService.getRegionTravelerStats();
+    (0, sendResponse_1.default)(res, {
+        statusCode: 200,
+        success: true,
+        message: "Region stats retrieved",
+        data: result,
+    });
+}));
 exports.UserController = {
     registerUser,
     getUserProfile,
     updateUserProfile,
     getAllUsers,
-    createAdmin
+    createAdmin,
+    getTopRatedTravelers,
+    getAdminDashboardStats,
+    getRecentlyActiveUsers,
+    getRegionStats,
 };

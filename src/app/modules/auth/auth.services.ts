@@ -44,8 +44,9 @@ const login = async (payload: { email: string; password: string }) => {
       email: user.email,
       role: user.role,
       status: user.status,
-      premium: user.premium,           // <--- ADD THIS
-    subscriptionType: user.subscriptionType
+      profileImage: user.profileImage, // ← ADD THIS LINE
+      premium: user.premium,
+      subscriptionType: user.subscriptionType
     },
   };
 };
@@ -58,7 +59,10 @@ const loginWithGoogle = async (payload: {
 }) => {
   const user = await prisma.user.upsert({
     where: { email: payload.email },
-    update: { name: payload.name },
+    update: { 
+      name: payload.name,
+      profileImage: payload.image // ← Also update profileImage for Google users
+    },
     create: {
       email: payload.email,
       name: payload.name,
@@ -66,6 +70,7 @@ const loginWithGoogle = async (payload: {
       status: UserStatus.ACTIVE,
       password: await bcrypt.hash(Math.random().toString(36).slice(-8), 12),
       needPasswordChange: false,
+      profileImage: payload.image // ← Add profileImage for new Google users
     },
   });
 
@@ -73,7 +78,6 @@ const loginWithGoogle = async (payload: {
     throw new ApiError(httpStatus.FORBIDDEN, "Your account is not active");
   }
 
-  // IMPORTANT: The payload here must match what your 'auth' middleware expects
   const jwtPayload = { id: user.id, email: user.email, role: user.role };
 
   const accessToken = jwtHelper.generateToken(
@@ -97,6 +101,7 @@ const loginWithGoogle = async (payload: {
       email: user.email,
       role: user.role,
       status: user.status,
+      profileImage: user.profileImage, // ← ADD THIS LINE
       premium: user.premium, 
       subscriptionType: user.subscriptionType,
     },
@@ -135,6 +140,16 @@ const refreshToken = async (token: string) => {
     accessToken,
     refreshToken,
     needPasswordChange: userData.needPasswordChange,
+    user: {
+      id: userData.id,
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+      status: userData.status,
+      profileImage: userData.profileImage, // ← ADD THIS LINE
+      premium: userData.premium,
+      subscriptionType: userData.subscriptionType
+    },
   };
 };
 

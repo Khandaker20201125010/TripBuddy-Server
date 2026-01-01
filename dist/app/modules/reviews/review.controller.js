@@ -67,10 +67,30 @@ const deleteReview = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, v
         data: result,
     });
 }));
+const getPendingReview = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const user = req.user;
+    // If for some reason auth middleware passed but user is missing
+    if (!(user === null || user === void 0 ? void 0 : user.id)) {
+        return (0, sendResponse_1.default)(res, {
+            statusCode: http_status_1.default.OK,
+            success: true,
+            message: "No user found",
+            data: null,
+        });
+    }
+    const result = yield review_services_1.ReviewService.getPendingReview(user.id);
+    (0, sendResponse_1.default)(res, {
+        statusCode: http_status_1.default.OK,
+        success: true,
+        message: "Pending review fetched successfully",
+        data: result,
+    });
+}));
 exports.ReviewController = {
     createReview,
     getAllReviews,
     getSingleReview,
     updateReview,
     deleteReview,
+    getPendingReview
 };

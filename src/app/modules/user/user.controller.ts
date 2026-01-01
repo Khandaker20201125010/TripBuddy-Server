@@ -18,8 +18,8 @@ const registerUser = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getAllUsers = catchAsync(async (req: Request, res: Response) => {
-    const filters = pick(req.query, userFilterableFields) // searching , filtering
-    const options = pick(req.query, ["page", "limit", "sortBy", "sortOrder"]) // pagination and sorting
+    const filters = pick(req.query, userFilterableFields)
+    const options = pick(req.query, ["page", "limit", "sortBy", "sortOrder"])
 
     const result = await UserService.getAllUsers(filters, options);
 
@@ -30,12 +30,11 @@ const getAllUsers = catchAsync(async (req: Request, res: Response) => {
         meta: result.meta,
         data: result.data
     })
-})
+});
+
 const getUserProfile = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  // IMPORTANT: We do NOT use req.user here. 
-  // This allows guests (unlogged users) to fetch the data.
   const result = await UserService.getUserProfile(id);
 
   sendResponse(res, {
@@ -58,7 +57,6 @@ const updateUserProfile = catchAsync(async (req: Request, res: Response) => {
 });
 
 const createAdmin = catchAsync(async (req: Request, res: Response) => {
-
     const result = await UserService.createAdmin(req);
     sendResponse(res, {
         statusCode: 201,
@@ -78,6 +76,7 @@ const getTopRatedTravelers = catchAsync(async (req: Request, res: Response) => {
     data: result,
   });
 });
+
 const getRecentlyActiveUsers = catchAsync(async (req: Request, res: Response) => {
   const result = await UserService.getRecentlyActiveUsers();
 
@@ -88,6 +87,7 @@ const getRecentlyActiveUsers = catchAsync(async (req: Request, res: Response) =>
     data: result,
   });
 });
+
 const getAdminDashboardStats = catchAsync(async (req: Request, res: Response) => {
   const result = await UserService.getAdminDashboardStats();
 
@@ -108,6 +108,7 @@ const getRegionStats = catchAsync(async (req: Request, res: Response) => {
     data: result,
   });
 });
+
 export const UserController = {
   registerUser,
   getUserProfile,

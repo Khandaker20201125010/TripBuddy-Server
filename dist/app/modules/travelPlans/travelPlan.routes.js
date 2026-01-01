@@ -14,12 +14,20 @@ const fileUploader_1 = require("../../helper/fileUploader");
 const router = express_1.default.Router();
 // CREATE TRAVEL PLAN
 router.post("/", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), fileUploader_1.fileUploader.upload.single("file"), (0, validateRequest_1.default)(travelPlan_validation_1.TravelPlanValidation.create), travelPlan_controller_1.TravelPlanController.createTravelPlan);
+router.get("/my-plans", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), travelPlan_controller_1.TravelPlanController.getMyTravelPlans);
+router.get("/match", travelPlan_controller_1.TravelPlanController.matchTravelPlans);
+router.get("/stats", travelPlan_controller_1.TravelPlanController.getCommunityStats);
+router.get("/recommended", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), travelPlan_controller_1.TravelPlanController.getRecommendedTravelersController);
+router.post("/suggestion", travelPlan_controller_1.TravelPlanController.getAISuggestions);
+router.post("/request/:id", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), travelPlan_controller_1.TravelPlanController.requestJoinTrip);
 // GET ALL
 router.get("/", travelPlan_controller_1.TravelPlanController.getAllTravelPlans);
 // GET SINGLE
 router.get("/:id", travelPlan_controller_1.TravelPlanController.getSingleTravelPlan);
+router.patch("/request-status/:buddyId", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), travelPlan_controller_1.TravelPlanController.updateJoinRequestStatus);
+router.get("/my-plans/requests", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), travelPlan_controller_1.TravelPlanController.getMyTripRequests);
 // UPDATE
-router.patch("/:id", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), fileUploader_1.fileUploader.upload.single("image"), (0, validateRequest_1.default)(travelPlan_validation_1.TravelPlanValidation.update), travelPlan_controller_1.TravelPlanController.updateTravelPlan);
+router.patch("/:id", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), fileUploader_1.fileUploader.upload.single("file"), (0, validateRequest_1.default)(travelPlan_validation_1.TravelPlanValidation.update), travelPlan_controller_1.TravelPlanController.updateTravelPlan);
 // DELETE
 router.delete("/:id", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), travelPlan_controller_1.TravelPlanController.deleteTravelPlan);
 exports.TravelPlanRoutes = router;

@@ -4,10 +4,11 @@ import { prisma } from "../../shared/prisma";
 import ApiError from "../../middlewares/ApiError";
 import { fileUploader } from "../../helper/fileUploader";
 import { Request } from "express";
-import { Admin, Prisma, Role } from "@prisma/client";
+import { Prisma, Role, UserStatus } from "@prisma/client";
 import { IOptions, paginationHelper } from "../../helper/paginationHelper";
 import { REGION_MAP, userSearchableFields } from "./user.constant";
 import { getRegionDefaultImage } from "../../helper/getRegionDefaultImage";
+import config from "../../config";
 
 const registerUser = async (payload: any, req: Request) => {
   const { name, email, password } = payload;
@@ -82,29 +83,27 @@ const getAllUsers = async (params: any, options: IOptions) => {
   }
 
   // 3. Optimized Travel Type & Interest Filtering
-  // This now checks BOTH the specific interests array AND the bio string
   if (travelType && travelType.trim() !== "") {
-  const tags = travelType.split(",").map((tag: string) => tag.trim());
-  
-  // Create a search array that includes both Original and Lowercase versions
-  // This solves the case-sensitivity issue in Prisma's hasSome
-  const searchTags = [...new Set([...tags, ...tags.map(t => t.toLowerCase())])];
-  
-  andConditions.push({
-    OR: [
-      {
-        interests: {
-          hasSome: searchTags, // Array match (now casing-proof)
+    const tags = travelType.split(",").map((tag: string) => tag.trim());
+    
+    // Create a search array that includes both Original and Lowercase versions
+    const searchTags = [...new Set([...tags, ...tags.map((t: string) => t.toLowerCase())])];
+    
+    andConditions.push({
+      OR: [
+        {
+          interests: {
+            hasSome: searchTags, // Array match (now casing-proof)
+          },
         },
-      },
-      {
-        OR: tags.map((tag: string) => ({
-          bio: { contains: tag, mode: "insensitive" }, // Text search (always casing-proof)
-        })),
-      },
-    ],
-  });
-}
+        {
+          OR: tags.map((tag: string) => ({
+            bio: { contains: tag, mode: "insensitive" }, // Text search (always casing-proof)
+          })),
+        },
+      ],
+    });
+  }
 
   // 4. Strict Filters
   if (Object.keys(filterData).length > 0) {
@@ -132,7 +131,7 @@ const getAllUsers = async (params: any, options: IOptions) => {
       role: true,
       status: true,
       bio: true,
-      interests: true, // Included in selection
+      interests: true,
       rating: true,
       visitedCountries: true,
       createdAt: true,
@@ -148,37 +147,70 @@ const getAllUsers = async (params: any, options: IOptions) => {
   };
 };
 
-const createAdmin = async (req: Request): Promise<Admin> => {
-  const file = req.file;
-
-  if (file) {
-    const uploadToCloudinary = await fileUploader.uploadToCloudinary(file);
-    req.body.admin.profilePhoto = uploadToCloudinary?.secure_url;
+const createAdmin = async (req: Request) => {
+  let parsedData;
+  
+  // Parse the JSON data if it's in the data field
+  if (req.body.data) {
+    parsedData = JSON.parse(req.body.data);
+  } else {
+    parsedData = req.body;
   }
 
-  const hashedPassword: string = await bcrypt.hash(req.body.password, 10);
+  const { password, admin } = parsedData;
+  
+  if (!admin) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Admin data is required");
+  }
 
-  const userData = {
-    name: req.body.admin.name,
-    email: req.body.admin.email,
-    password: hashedPassword,
-    role: Role.ADMIN,
-  };
+  // Check if user already exists
+  const existingUser = await prisma.user.findUnique({
+    where: { email: admin.email }
+  });
 
-  const result = await prisma.$transaction(async (transactionClient) => {
-    await transactionClient.user.create({
-      data: userData,
-    });
+  if (existingUser) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Email already exists");
+  }
 
-    const createdAdminData = await transactionClient.admin.create({
-      data: req.body.admin,
-    });
+  let profileImageUrl = null;
+  let profileImageFileName = null;
 
-    return createdAdminData;
+  // Handle file upload
+  if (req.file) {
+    const uploadResult = await fileUploader.uploadToCloudinary(req.file);
+    profileImageUrl = uploadResult?.secure_url;
+    profileImageFileName = uploadResult?.public_id;
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Create user with ADMIN role
+  const result = await prisma.user.create({
+    data: {
+      name: admin.name,
+      email: admin.email,
+      password: hashedPassword,
+      role: Role.ADMIN,
+      contactNumber: admin.contactNumber,
+      profileImage: profileImageUrl,
+      profileImageFileName: profileImageFileName,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      status: true,
+      contactNumber: true,
+      profileImage: true,
+      createdAt: true,
+      updatedAt: true,
+    }
   });
 
   return result;
 };
+
 const getUserProfile = async (id: string) => {
   // Check if user exists
   const user = await prisma.user.findUnique({
@@ -213,7 +245,6 @@ const getUserProfile = async (id: string) => {
   });
 
   if (!user) {
-    // This is the error triggering "Profile Not Found" on frontend
     throw new ApiError(httpStatus.NOT_FOUND, "User profile not found in database");
   }
 
@@ -223,22 +254,75 @@ const getUserProfile = async (id: string) => {
 };
 
 const updateUserProfile = async (id: string, req: Request) => {
-  // 1. Parse the text data from the 'data' field sent by frontend
+  // Get the user data from request body
   const bodyData = req.body.data ? JSON.parse(req.body.data) : req.body;
+  const { status, role, ...otherData } = bodyData;
 
-  const updateData: any = { ...bodyData };
+  // 1. Check if user exists and get their email
+  const userToUpdate = await prisma.user.findUnique({
+    where: { id },
+    select: { email: true }
+  });
+
+  if (!userToUpdate) {
+    throw new ApiError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  const isSuperAdmin = userToUpdate.email === config.super_admin.email;
+  const currentUser = (req as any).user;
+  const isSelfUpdate = currentUser?.email === userToUpdate.email;
 
   // 2. Handle Cloudinary Upload
+  const updateData: any = { ...otherData };
+
   if (req.file) {
     const upload = await fileUploader.uploadToCloudinary(req.file);
     updateData.profileImage = upload.secure_url;
     updateData.profileImageFileName = upload.public_id;
   }
 
-  // 3. Update Database
-  return prisma.user.update({
+  // 3. Handle role changes
+  if (role && Object.values(Role).includes(role as Role)) {
+    if (isSuperAdmin) {
+      // Super admin cannot change their own role
+      throw new ApiError(httpStatus.FORBIDDEN, "Super admin role cannot be changed");
+    }
+    
+    // Only allow role change if not super admin
+    updateData.role = role;
+  }
+
+  // 4. Handle status changes
+  if (status && Object.values(UserStatus).includes(status as UserStatus)) {
+    if (isSuperAdmin && !isSelfUpdate) {
+      // Others cannot modify super admin status
+      throw new ApiError(httpStatus.FORBIDDEN, "Super admin status cannot be modified");
+    }
+    
+    // Super admin can update their own status (like active/inactive)
+    // Others can update status for non-super-admin users
+    updateData.status = status;
+  }
+
+  // 5. Update Database
+  return await prisma.user.update({
     where: { id },
     data: updateData,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      status: true,
+      profileImage: true,
+      bio: true,
+      contactNumber: true,
+      interests: true,
+      visitedCountries: true,
+      rating: true,
+      createdAt: true,
+      updatedAt: true,
+    }
   });
 };
 
@@ -246,7 +330,6 @@ const getTopRatedTravelers = async () => {
   return await prisma.user.findMany({
     where: {
       status: "ACTIVE",
-      // ✅ This ensures only users who have been rated are shown
       rating: {
         gt: 0, 
       },
@@ -268,15 +351,16 @@ const getTopRatedTravelers = async () => {
     }
   });
 };
+
 const getRecentlyActiveUsers = async () => {
   return await prisma.user.findMany({
     where: {
       status: "ACTIVE",
     },
     orderBy: {
-      updatedAt: 'desc', // This tracks recent activity
+      updatedAt: 'desc',
     },
-    take: 8, // Limit for the avatar stack
+    take: 8,
     select: {
       id: true,
       name: true,
@@ -284,6 +368,7 @@ const getRecentlyActiveUsers = async () => {
     },
   });
 };
+
 const getAdminDashboardStats = async () => {
   const totalUsers = await prisma.user.count();
   const totalTravelPlans = await prisma.travelPlan.count();
@@ -301,7 +386,8 @@ const getAdminDashboardStats = async () => {
     bannedUsers
   };
 };
- const getRegionTravelerStats = async () => {
+
+const getRegionTravelerStats = async () => {
   const stats = await Promise.all(
     Object.keys(REGION_MAP).map(async (regionName) => {
       const countries = REGION_MAP[regionName];
@@ -310,13 +396,11 @@ const getAdminDashboardStats = async () => {
         where: {
           OR: [
             {
-              // Check if any country in the REGION_MAP exists in user's visited list
               visitedCountries: {
                 hasSome: countries
               }
             },
             {
-              // Fallback: If the user literally typed the region name (e.g. "Asia")
               visitedCountries: {
                 has: regionName
               }
@@ -335,6 +419,7 @@ const getAdminDashboardStats = async () => {
 
   return stats;
 };
+
 export const UserService = {
   registerUser,
   getUserProfile,

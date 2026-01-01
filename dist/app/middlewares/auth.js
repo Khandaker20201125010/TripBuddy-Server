@@ -14,17 +14,33 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const jwtHelper_1 = require("../helper/jwtHelper");
 const config_1 = __importDefault(require("../config"));
+const ApiError_1 = __importDefault(require("./ApiError"));
+const http_status_1 = __importDefault(require("http-status"));
 const auth = (...roles) => {
     return (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+        var _a;
         try {
-            const token = req.cookies.accessToken; // <-- fix here
-            if (!token) {
-                throw new Error("You are not authorized!");
+            let token = req.headers.authorization;
+            if (token && token.startsWith("Bearer ")) {
+                token = token.split(" ")[1];
             }
-            const verifyUser = jwtHelper_1.jwtHelper.verifyToken(token, config_1.default.jwt.access_secret); // use access_secret
+            else {
+                token = (_a = req.cookies) === null || _a === void 0 ? void 0 : _a.accessToken;
+            }
+            if (!token) {
+                throw new ApiError_1.default(http_status_1.default.UNAUTHORIZED, "You are not authorized! Token missing.");
+            }
+            let verifyUser;
+            try {
+                verifyUser = jwtHelper_1.jwtHelper.verifyToken(token, config_1.default.jwt.access_secret);
+            }
+            catch (error) {
+                // CATCH JWT ERRORS HERE TO PREVENT 500
+                throw new ApiError_1.default(http_status_1.default.UNAUTHORIZED, "Token expired or invalid");
+            }
             req.user = verifyUser;
             if (roles.length && !roles.includes(verifyUser.role)) {
-                throw new Error("You are not authorized!");
+                throw new ApiError_1.default(http_status_1.default.FORBIDDEN, "Forbidden");
             }
             next();
         }

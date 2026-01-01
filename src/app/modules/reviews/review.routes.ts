@@ -10,7 +10,7 @@ const router = express.Router();
 
 router.get(
   "/pending", 
-  auth(Role.USER), 
+  auth(Role.USER, Role.ADMIN), 
   ReviewController.getPendingReview
 );
 

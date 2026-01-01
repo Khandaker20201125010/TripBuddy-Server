@@ -1,4 +1,4 @@
-import express, { Application, NextFunction, Request, Response } from "express";
+import express, { Application, Request, Response } from "express";
 import cors from "cors";
 import notFound from "./app/middlewares/notFound";
 import globalErrorHandler from "./app/middlewares/globalErrorHandler";
@@ -9,27 +9,28 @@ import { webhookHandler } from "./app/modules/payments/payment.webhook";
 
 const app: Application = express();
 
-app.use(cors({
-    origin: 'http://localhost:3000',
-    credentials: true,
-    
-}));
 
-app.post(
-  "/webhook",
-  express.raw({ type: "application/json" }),
-  webhookHandler
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      process.env.FRONTEND_URL as string, 
+    ],
+    credentials: true,
+  })
 );
 
 
+app.post("/webhook", express.raw({ type: "application/json" }), webhookHandler);
 
 
-//parser
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api/v1",router);
+
+app.use("/api/v1", router);
+
 
 app.get("/", (req: Request, res: Response) => {
   res.send({
@@ -40,8 +41,8 @@ app.get("/", (req: Request, res: Response) => {
   });
 });
 
+// Error Handlers
 app.use(globalErrorHandler);
-
 app.use(notFound);
 
 export default app;

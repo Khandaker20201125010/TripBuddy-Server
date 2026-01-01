@@ -98,7 +98,6 @@ const getAllTravelPlans = async (
 ) => {
   const { page, limit, skip, sortBy, sortOrder } =
     paginationHelper.calculatePagination(options);
-
   const {
     searchTerm,
     destination,
@@ -109,7 +108,6 @@ const getAllTravelPlans = async (
     travelType,
     ...filterData
   } = params;
-
   const andConditions: Prisma.TravelPlanWhereInput[] = [];
 
   // 1. Search Logic (Global Search)
@@ -147,7 +145,6 @@ const getAllTravelPlans = async (
     const searchTags = [
       ...new Set([...tags, ...tags.map((t: string) => t.toLowerCase())]),
     ];
-
     andConditions.push({
       OR: [
         { travelType: { in: searchTags } },
@@ -198,8 +195,6 @@ const getAllTravelPlans = async (
   const whereConditions: Prisma.TravelPlanWhereInput =
     andConditions.length > 0 ? { AND: andConditions } : {};
 
-  // --- FIXED QUERY WITH PROPER CONNECTION FETCHING ---
-
   // 1. Fetch travel plans
   const plans = await prisma.travelPlan.findMany({
     skip,
@@ -221,7 +216,10 @@ const getAllTravelPlans = async (
           status: true,
           role: true,
           visitedCountries: true,
-          // We'll fetch connections separately
+          // --- FIXED: ADDED THESE FIELDS ---
+          premium: true,
+          subscriptionType: true,
+          // --------------------------------
         },
       },
     },
@@ -232,7 +230,6 @@ const getAllTravelPlans = async (
 
   // 3. Fetch connections between current user and these users
   let connections: any[] = [];
-
   if (currentUserId && userIds.length > 0) {
     connections = await prisma.connection.findMany({
       where: {
@@ -260,22 +257,18 @@ const getAllTravelPlans = async (
 
   // 4. Map connections to users
   const userConnectionsMap: Record<string, any> = {};
-
   connections.forEach((conn) => {
-    // If current user is the sender
     if (conn.senderId === currentUserId) {
       userConnectionsMap[conn.receiverId] = {
         id: conn.id,
         status: conn.status,
-        direction: "sent", // Current user sent request to this user
+        direction: "sent",
       };
-    }
-    // If current user is the receiver
-    else if (conn.receiverId === currentUserId) {
+    } else if (conn.receiverId === currentUserId) {
       userConnectionsMap[conn.senderId] = {
         id: conn.id,
         status: conn.status,
-        direction: "received", // This user sent request to current user
+        direction: "received",
       };
     }
   });
@@ -290,18 +283,17 @@ const getAllTravelPlans = async (
       user: user
         ? {
             ...user,
-            connectionInfo, // Add connection info to user object
+            connectionInfo,
           }
         : null,
     };
   });
 
-  // 6. Calculate total count (distinct users)
+  // 6. Calculate total count
   const groupedCount = await prisma.travelPlan.groupBy({
     by: ["userId"],
     where: whereConditions,
   });
-
   const total = groupedCount.length;
 
   return {
@@ -452,7 +444,7 @@ const getCommunityStats = async () => {
 };
 const matchTravelPlans = async (
   filters: any,
-  options: { page?: number; limit?: number; sortBy?: string }, // Added sortBy
+  options: { page?: number; limit?: number; sortBy?: string },
   currentUserId?: string
 ) => {
   const { destination, startDate, endDate, travelType, searchTerm } = filters;
@@ -463,10 +455,17 @@ const matchTravelPlans = async (
 
   const andConditions: Prisma.TravelPlanWhereInput[] = [];
 
-  // ... [Keep your existing filter logic (User exclusion, Date, SearchTerm, etc.)] ...
-  if (currentUserId) andConditions.push({ userId: { not: currentUserId } });
-  if (!startDate && !endDate)
+  // 1. Exclude current user's own trips
+  if (currentUserId) {
+    andConditions.push({ userId: { not: currentUserId } });
+  }
+
+  // 2. Default: Show only FUTURE trips if no specific dates are requested
+  if (!startDate && !endDate) {
     andConditions.push({ endDate: { gte: new Date() } });
+  }
+
+  // 3. Search Term (General Search)
   if (searchTerm) {
     andConditions.push({
       OR: [
@@ -475,30 +474,46 @@ const matchTravelPlans = async (
       ],
     });
   }
-  if (destination)
+
+  // 4. Destination Filter
+  if (destination) {
     andConditions.push({
       destination: { contains: destination, mode: "insensitive" },
     });
-  if (travelType && travelType !== "")
-    andConditions.push({ travelType: { equals: travelType } });
-  if (startDate)
-    andConditions.push({ startDate: { gte: new Date(startDate) } }); // Simplified for brevity
-  if (endDate) andConditions.push({ endDate: { lte: new Date(endDate) } });
+  }
+
+  // 5. Vibe/Travel Type Filter
+  // Using insensitive ensures "adventure" matches "Adventure"
+  if (travelType) {
+    andConditions.push({ 
+        travelType: { equals: travelType, mode: "insensitive" } 
+    });
+  }
+
+  // 6. Date Filters
+  if (startDate) {
+    andConditions.push({ startDate: { gte: new Date(startDate) } });
+  }
+  if (endDate) {
+    andConditions.push({ endDate: { lte: new Date(endDate) } });
+  }
 
   const whereConditions: Prisma.TravelPlanWhereInput =
     andConditions.length > 0 ? { AND: andConditions } : {};
 
-  // --- SORTING LOGIC ---
+  // --- SORTING LOGIC FIXED ---
+  // We initialize with a safe default
   let orderBy: Prisma.TravelPlanOrderByWithRelationInput = {
-    createdAt: "desc",
+    createdAt: "desc", // Default: Newest first
   };
 
+  // Strictly check the string values
   if (options.sortBy === "Date") {
     orderBy = { startDate: "asc" }; // Soonest trips first
   } else if (options.sortBy === "Destination") {
-    orderBy = { destination: "asc" }; // Alphabetical
+    orderBy = { destination: "asc" }; // A-Z
   }
-  // Default is "Best Match" (Newest created)
+  // If "Best Match" or unknown string, it stays as createdAt: "desc"
 
   const [data, total] = await Promise.all([
     prisma.travelPlan.findMany({
@@ -506,7 +521,7 @@ const matchTravelPlans = async (
       include: { user: true, buddies: true },
       skip,
       take: limit,
-      orderBy: orderBy, // Applied here
+      orderBy: orderBy,
     }),
     prisma.travelPlan.count({ where: whereConditions }),
   ]);

@@ -21,11 +21,18 @@ const auth = (...roles: string[]) => {
         throw new ApiError(httpStatus.UNAUTHORIZED, "You are not authorized! Token missing.");
       }
 
-      const verifyUser = jwtHelper.verifyToken(token, config.jwt.access_secret as Secret);
+      let verifyUser;
+      try {
+        verifyUser = jwtHelper.verifyToken(token, config.jwt.access_secret as Secret);
+      } catch (error) {
+        // CATCH JWT ERRORS HERE TO PREVENT 500
+        throw new ApiError(httpStatus.UNAUTHORIZED, "Token expired or invalid");
+      }
+
       req.user = verifyUser;
 
       if (roles.length && !roles.includes(verifyUser.role)) {
-        throw new ApiError(403, "Forbidden");
+        throw new ApiError(httpStatus.FORBIDDEN, "Forbidden");
       }
       next();
     } catch (err) {

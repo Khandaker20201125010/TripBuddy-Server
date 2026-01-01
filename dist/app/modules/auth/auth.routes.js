@@ -6,8 +6,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.authRoutes = void 0;
 const express_1 = __importDefault(require("express"));
 const auth_controller_1 = require("./auth.controller");
-const user_validation_1 = require("../user/user.validation");
-const validateRequest_1 = __importDefault(require("../../middlewares/validateRequest"));
 const router = express_1.default.Router();
-router.post("/login", (0, validateRequest_1.default)(user_validation_1.UserValidation.loginValidation), auth_controller_1.AuthController.login);
+router.post("/login", auth_controller_1.AuthController.login);
+// ✅ NEW Route
+router.post("/login/google", auth_controller_1.AuthController.loginWithGoogle);
+router.post('/refresh-token', auth_controller_1.AuthController.refreshToken);
 exports.authRoutes = router;
