@@ -18,10 +18,31 @@ const sendResponse_1 = __importDefault(require("../../shared/sendResponse"));
 const auth_services_1 = require("./auth.services");
 const config_1 = __importDefault(require("../../config"));
 const http_status_1 = __importDefault(require("http-status"));
+const location_service_1 = require("../location/location.service");
 const isProd = config_1.default.node_env === "production";
+// Helper to get client IP
+const getClientIP = (req) => {
+    const xForwardedFor = req.headers['x-forwarded-for'];
+    if (xForwardedFor) {
+        if (Array.isArray(xForwardedFor)) {
+            return xForwardedFor[0].split(',')[0].trim();
+        }
+        return xForwardedFor.split(',')[0].trim();
+    }
+    return req.ip || req.socket.remoteAddress || '';
+};
 const login = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const result = yield auth_services_1.AuthService.login(req.body);
     const { accessToken, refreshToken, needPasswordChange, user } = result;
+    // Auto-detect location after successful login
+    try {
+        const clientIp = getClientIP(req);
+        yield location_service_1.LocationService.getOrCreateUserLocation(user.id, clientIp);
+    }
+    catch (locationError) {
+        console.error("Failed to detect location on login:", locationError);
+        // Don't fail login if location detection fails
+    }
     res.cookie("accessToken", accessToken, {
         secure: isProd,
         httpOnly: false,
@@ -46,11 +67,19 @@ const login = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, 
         },
     });
 }));
-// ✅ UPDATED: Google Login Controller
+// Google Login Controller
 const loginWithGoogle = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const result = yield auth_services_1.AuthService.loginWithGoogle(req.body);
-    // ✅ Extract user
     const { accessToken, refreshToken, needPasswordChange, user } = result;
+    // Auto-detect location after successful Google login
+    try {
+        const clientIp = getClientIP(req);
+        yield location_service_1.LocationService.getOrCreateUserLocation(user.id, clientIp);
+    }
+    catch (locationError) {
+        console.error("Failed to detect location on Google login:", locationError);
+        // Don't fail login if location detection fails
+    }
     res.cookie("accessToken", accessToken, {
         secure: isProd,
         httpOnly: false,
@@ -71,7 +100,7 @@ const loginWithGoogle = (0, catchAsync_1.default)((req, res) => __awaiter(void 0
             accessToken,
             refreshToken,
             needPasswordChange,
-            user, // ✅ Send user to frontend
+            user,
         },
     });
 }));

@@ -25,9 +25,10 @@ const createTravelPlan = (0, catchAsync_1.default)((req, res) => __awaiter(void 
     if (!((_a = req.user) === null || _a === void 0 ? void 0 : _a.id)) {
         throw new ApiError_1.default(401, "Authentication required");
     }
-    const payload = Object.assign(Object.assign({}, req.body), { budget: req.body.budget ? Number(req.body.budget) : 0, visibility: req.body.visibility === 'true' });
+    const payload = Object.assign(Object.assign({}, req.body), { budget: req.body.budget ? Number(req.body.budget) : 0, visibility: req.body.visibility === 'true' || req.body.visibility === true });
     // Service will throw an error if limit is reached
-    const result = yield travelPlan_services_1.TravelPlanService.createTravelPlan(payload, req.user.id, req.file);
+    const result = yield travelPlan_services_1.TravelPlanService.createTravelPlan(payload, req.user.id, req.file // Make sure this is passed
+    );
     (0, sendResponse_1.default)(res, {
         statusCode: http_status_1.default.CREATED,
         success: true,

@@ -240,7 +240,7 @@ const getUserProfile = (id) => __awaiter(void 0, void 0, void 0, function* () {
     }
     // Remove sensitive information
     const { password } = user, safeUserData = __rest(user, ["password"]);
-    return safeUserData;
+    return Object.assign({}, safeUserData);
 });
 const updateUserProfile = (id, req) => __awaiter(void 0, void 0, void 0, function* () {
     // Get the user data from request body
@@ -249,7 +249,7 @@ const updateUserProfile = (id, req) => __awaiter(void 0, void 0, void 0, functio
     // 1. Check if user exists and get their email
     const userToUpdate = yield prisma_1.prisma.user.findUnique({
         where: { id },
-        select: { email: true }
+        select: { email: true, profileImageFileName: true } // Get existing image file name
     });
     if (!userToUpdate) {
         throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "User not found");
@@ -260,6 +260,17 @@ const updateUserProfile = (id, req) => __awaiter(void 0, void 0, void 0, functio
     // 2. Handle Cloudinary Upload
     const updateData = Object.assign({}, otherData);
     if (req.file) {
+        // First delete old image from Cloudinary if exists
+        if (userToUpdate.profileImageFileName) {
+            try {
+                yield fileUploader_1.fileUploader.deleteFromCloudinary(userToUpdate.profileImageFileName);
+            }
+            catch (error) {
+                console.error('Failed to delete old profile image:', error);
+                // Continue even if deletion fails
+            }
+        }
+        // Upload new image
         const upload = yield fileUploader_1.fileUploader.uploadToCloudinary(req.file);
         updateData.profileImage = upload.secure_url;
         updateData.profileImageFileName = upload.public_id;
@@ -294,6 +305,7 @@ const updateUserProfile = (id, req) => __awaiter(void 0, void 0, void 0, functio
             role: true,
             status: true,
             profileImage: true,
+            profileImageFileName: true,
             bio: true,
             contactNumber: true,
             interests: true,

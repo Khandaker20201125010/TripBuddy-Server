@@ -1,3 +1,4 @@
+// backend/src/modules/auth/auth.services.ts
 import { prisma } from "../../shared/prisma";
 import bcrypt from "bcryptjs";
 import { Secret } from "jsonwebtoken";
@@ -7,7 +8,24 @@ import config from "../../config";
 import ApiError from "../../middlewares/ApiError";
 import httpStatus from "http-status";
 
-const login = async (payload: { email: string; password: string }) => {
+import { Request } from "express";
+import { LocationService } from "../location/location.service";
+
+// Helper to get client IP
+const getClientIP = (req?: Request): string => {
+  if (!req) return '';
+  
+  const xForwardedFor = req.headers['x-forwarded-for'];
+  if (xForwardedFor) {
+    if (Array.isArray(xForwardedFor)) {
+      return xForwardedFor[0].split(',')[0].trim();
+    }
+    return xForwardedFor.split(',')[0].trim();
+  }
+  return req.ip || req.socket.remoteAddress || '';
+};
+
+const login = async (payload: { email: string; password: string }, req?: Request) => {
   const user = await prisma.user.findUniqueOrThrow({
     where: {
       email: payload.email,
@@ -19,8 +37,26 @@ const login = async (payload: { email: string; password: string }) => {
     payload.password,
     user.password
   );
+  
   if (!isCorrectPassword) {
     throw new ApiError(httpStatus.BAD_REQUEST, "Password is incorrect!");
+  }
+
+  // REMOVED: Forced Bangladesh location
+  // Only detect location if user doesn't have one or it's very old
+  if (!user.latitude || !user.longitude) {
+    try {
+      const clientIp = getClientIP(req);
+      if (clientIp) {
+        console.log(`📍 Detecting location for user ${user.email} from IP: ${clientIp}`);
+        
+        // Use the enhanced location service
+        await LocationService.getOrCreateUserLocation(user.id, clientIp);
+      }
+    } catch (error) {
+      console.error("Failed to detect location on login:", error);
+      // Continue without location - it's optional
+    }
   }
 
   const accessToken = jwtHelper.generateToken(
@@ -28,11 +64,33 @@ const login = async (payload: { email: string; password: string }) => {
     config.jwt.access_secret as Secret,
     "1h"
   );
+  
   const refreshToken = jwtHelper.generateToken(
     { id: user.id, email: user.email, role: user.role },
     config.jwt.refresh_secret as Secret,
     "90d"
   );
+
+  // Get updated user with location
+  const updatedUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      status: true,
+      profileImage: true,
+      premium: true,
+      subscriptionType: true,
+      latitude: true,
+      longitude: true,
+      locationName: true,
+      city: true,
+      country: true,
+      locationUpdatedAt: true
+    }
+  });
 
   return {
     accessToken,
@@ -44,24 +102,27 @@ const login = async (payload: { email: string; password: string }) => {
       email: user.email,
       role: user.role,
       status: user.status,
-      profileImage: user.profileImage, // ← ADD THIS LINE
+      profileImage: user.profileImage,
       premium: user.premium,
-      subscriptionType: user.subscriptionType
+      subscriptionType: user.subscriptionType,
+      latitude: updatedUser?.latitude ?? null,
+      longitude: updatedUser?.longitude ?? null,
+      locationName: updatedUser?.locationName ?? null,
+      city: updatedUser?.city ?? null,
+      country: updatedUser?.country ?? null
     },
   };
 };
 
-// auth.services.ts -> loginWithGoogle
-const loginWithGoogle = async (payload: {
-  email: string;
-  name: string;
-  image?: string;
-}) => {
+const loginWithGoogle = async (
+  payload: { email: string; name: string; image?: string }, 
+  req?: Request
+) => {
   const user = await prisma.user.upsert({
     where: { email: payload.email },
     update: { 
       name: payload.name,
-      profileImage: payload.image // ← Also update profileImage for Google users
+      profileImage: payload.image
     },
     create: {
       email: payload.email,
@@ -70,12 +131,25 @@ const loginWithGoogle = async (payload: {
       status: UserStatus.ACTIVE,
       password: await bcrypt.hash(Math.random().toString(36).slice(-8), 12),
       needPasswordChange: false,
-      profileImage: payload.image // ← Add profileImage for new Google users
+      profileImage: payload.image
     },
   });
 
   if (user.status !== UserStatus.ACTIVE) {
     throw new ApiError(httpStatus.FORBIDDEN, "Your account is not active");
+  }
+
+  // Auto-detect location for new Google users
+  if (!user.latitude || !user.longitude) {
+    try {
+      const clientIp = getClientIP(req);
+      if (clientIp) {
+        console.log(`📍 Detecting location for Google user ${user.email} from IP: ${clientIp}`);
+        await LocationService.getOrCreateUserLocation(user.id, clientIp);
+      }
+    } catch (error) {
+      console.error("Failed to detect location for Google user:", error);
+    }
   }
 
   const jwtPayload = { id: user.id, email: user.email, role: user.role };
@@ -85,11 +159,33 @@ const loginWithGoogle = async (payload: {
     config.jwt.access_secret as Secret,
     "1h"
   );
+  
   const refreshToken = jwtHelper.generateToken(
     jwtPayload,
     config.jwt.refresh_secret as Secret,
     "90d"
   );
+
+  // Get updated user with location
+  const updatedUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      status: true,
+      profileImage: true,
+      premium: true,
+      subscriptionType: true,
+      latitude: true,
+      longitude: true,
+      locationName: true,
+      city: true,
+      country: true,
+      locationUpdatedAt: true
+    }
+  });
 
   return {
     accessToken,
@@ -101,9 +197,14 @@ const loginWithGoogle = async (payload: {
       email: user.email,
       role: user.role,
       status: user.status,
-      profileImage: user.profileImage, // ← ADD THIS LINE
-      premium: user.premium, 
+      profileImage: user.profileImage,
+      premium: user.premium,
       subscriptionType: user.subscriptionType,
+      latitude: updatedUser?.latitude ?? null,
+      longitude: updatedUser?.longitude ?? null,
+      locationName: updatedUser?.locationName ?? null,
+      city: updatedUser?.city ?? null,
+      country: updatedUser?.country ?? null
     },
   };
 };
@@ -138,7 +239,7 @@ const refreshToken = async (token: string) => {
 
   return {
     accessToken,
-    refreshToken,
+    refreshToken: token,
     needPasswordChange: userData.needPasswordChange,
     user: {
       id: userData.id,
@@ -146,9 +247,14 @@ const refreshToken = async (token: string) => {
       email: userData.email,
       role: userData.role,
       status: userData.status,
-      profileImage: userData.profileImage, // ← ADD THIS LINE
+      profileImage: userData.profileImage,
       premium: userData.premium,
-      subscriptionType: userData.subscriptionType
+      subscriptionType: userData.subscriptionType,
+      latitude: userData.latitude,
+      longitude: userData.longitude,
+      locationName: userData.locationName,
+      city: userData.city,
+      country: userData.country
     },
   };
 };

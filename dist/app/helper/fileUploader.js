@@ -66,7 +66,23 @@ const uploadToCloudinary = (file) => __awaiter(void 0, void 0, void 0, function*
         bufferStream.pipe(uploadStream);
     });
 });
+const deleteFromCloudinary = (publicId) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        cloudinary_1.v2.config({
+            cloud_name: config_1.default.cloudinary.cloud_name,
+            api_key: config_1.default.cloudinary.api_key,
+            api_secret: config_1.default.cloudinary.api_secret
+        });
+        const result = yield cloudinary_1.v2.uploader.destroy(publicId);
+        return result.result === 'ok';
+    }
+    catch (error) {
+        console.error('Error deleting from Cloudinary:', error);
+        throw error;
+    }
+});
 exports.fileUploader = {
     upload,
-    uploadToCloudinary
+    uploadToCloudinary,
+    deleteFromCloudinary
 };

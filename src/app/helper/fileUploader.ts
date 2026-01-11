@@ -58,8 +58,25 @@ const uploadToCloudinary = async (file: Express.Multer.File): Promise<{ secure_u
         bufferStream.pipe(uploadStream);
     });
 };
+const deleteFromCloudinary = async (publicId: string): Promise<boolean> => {
+  try {
+    cloudinary.config({
+      cloud_name: config.cloudinary.cloud_name,
+      api_key: config.cloudinary.api_key,
+      api_secret: config.cloudinary.api_secret
+    });
+
+    const result = await cloudinary.uploader.destroy(publicId);
+    return result.result === 'ok';
+  } catch (error) {
+    console.error('Error deleting from Cloudinary:', error);
+    throw error;
+  }
+};
+
 
 export const fileUploader = {
     upload,
-    uploadToCloudinary
+    uploadToCloudinary,
+    deleteFromCloudinary
 };

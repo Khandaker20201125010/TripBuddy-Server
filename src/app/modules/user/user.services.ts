@@ -250,7 +250,10 @@ const getUserProfile = async (id: string) => {
 
   // Remove sensitive information
   const { password, ...safeUserData } = user;
-  return safeUserData;
+    return {
+    ...safeUserData,
+  
+  };
 };
 
 const updateUserProfile = async (id: string, req: Request) => {
@@ -261,7 +264,7 @@ const updateUserProfile = async (id: string, req: Request) => {
   // 1. Check if user exists and get their email
   const userToUpdate = await prisma.user.findUnique({
     where: { id },
-    select: { email: true }
+    select: { email: true, profileImageFileName: true } // Get existing image file name
   });
 
   if (!userToUpdate) {
@@ -276,6 +279,17 @@ const updateUserProfile = async (id: string, req: Request) => {
   const updateData: any = { ...otherData };
 
   if (req.file) {
+    // First delete old image from Cloudinary if exists
+    if (userToUpdate.profileImageFileName) {
+      try {
+        await fileUploader.deleteFromCloudinary(userToUpdate.profileImageFileName);
+      } catch (error) {
+        console.error('Failed to delete old profile image:', error);
+        // Continue even if deletion fails
+      }
+    }
+    
+    // Upload new image
     const upload = await fileUploader.uploadToCloudinary(req.file);
     updateData.profileImage = upload.secure_url;
     updateData.profileImageFileName = upload.public_id;
@@ -315,6 +329,7 @@ const updateUserProfile = async (id: string, req: Request) => {
       role: true,
       status: true,
       profileImage: true,
+      profileImageFileName: true,
       bio: true,
       contactNumber: true,
       interests: true,
