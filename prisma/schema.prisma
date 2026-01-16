@@ -53,6 +53,11 @@ enum ConnectionStatus {
   REJECTED
 }
 
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
 model User {
   id                    String            @id @default(uuid())
   name                  String
@@ -84,13 +89,18 @@ model User {
   sentConnections     Connection[] @relation("SentConnections")
   receivedConnections Connection[] @relation("ReceivedConnections")
 
-  latitude          Float? 
-  longitude         Float? 
-  locationName      String? 
-  city              String? 
-  country           String? 
-  timezone          String? 
-  locationUpdatedAt DateTime?
+  mediaPosts MediaPost[]
+  likes      Like[]
+  comments   Comment[]
+  shares     Share[]
+
+  latitude           Float?
+  longitude          Float?
+  locationName       String?
+  city               String?
+  country            String?
+  timezone           String?
+  locationUpdatedAt  DateTime?
   enableLiveLocation Boolean   @default(false)
 
   createdAt DateTime @default(now())
@@ -150,8 +160,9 @@ model TravelPlan {
   reviews       Review[]
   notifications Notification[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  mediaPosts MediaPost[]
 }
 
 model TravelBuddy {
@@ -198,4 +209,76 @@ model Review {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model MediaPost {
+  id            String    @id @default(uuid())
+  userId        String
+  caption       String?
+  imageUrl      String
+  publicId      String // Cloudinary public ID
+  location      String?
+  tags          String[]
+  likesCount    Int       @default(0)
+  commentsCount Int       @default(0)
+  sharesCount   Int       @default(0)
+  type          MediaType @default(IMAGE)
+  travelPlanId  String?
+
+  user       User        @relation(fields: [userId], references: [id])
+  travelPlan TravelPlan? @relation(fields: [travelPlanId], references: [id], onDelete: Cascade)
+  likes      Like[]
+  comments   Comment[]
+  shares     Share[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("media_posts")
+}
+
+model Like {
+  id          String @id @default(uuid())
+  userId      String
+  mediaPostId String
+
+  user      User      @relation(fields: [userId], references: [id])
+  mediaPost MediaPost @relation(fields: [mediaPostId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, mediaPostId])
+  @@map("likes")
+}
+
+model Comment {
+  id          String  @id @default(uuid())
+  userId      String
+  mediaPostId String
+  content     String
+  parentId    String? // For nested comments/replies
+
+  user      User      @relation(fields: [userId], references: [id])
+  mediaPost MediaPost @relation(fields: [mediaPostId], references: [id], onDelete: Cascade)
+  parent    Comment?  @relation("Replies", fields: [parentId], references: [id])
+  replies   Comment[] @relation("Replies")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("comments")
+}
+
+model Share {
+  id          String @id @default(uuid())
+  userId      String
+  mediaPostId String
+
+  user      User      @relation(fields: [userId], references: [id])
+  mediaPost MediaPost @relation(fields: [mediaPostId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, mediaPostId])
+  @@map("shares")
 }

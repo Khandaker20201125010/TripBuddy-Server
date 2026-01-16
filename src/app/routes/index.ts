@@ -6,6 +6,7 @@ import { ReviewRoutes } from "../modules/reviews/review.routes";
 import { PaymentRoutes } from "../modules/payments/payment.routes";
 import { ConnectionRoutes } from "../modules/connection/connection.routes";
 import { LocationRoutes } from "../modules/location/location.routes";
+import { MediaRoutes } from "../modules/media/media.routes";
 
 const router = express.Router();
 
@@ -37,6 +38,10 @@ const moduleRoutes = [
   {
     path: "/location",
     route: LocationRoutes,
+  },
+  {
+    path: "/media",
+    route: MediaRoutes,
   }
 ];
 
