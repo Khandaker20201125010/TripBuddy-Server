@@ -144,13 +144,25 @@ const shareMediaPost = catchAsync(
     const { id } = req.params;
     const userId = req.user.id;
 
+    console.log("Controller - Sharing post:", { id, userId });
+
     const result = await MediaService.shareMediaPost(id, userId);
 
+    // Handle both response types
+    const message = result.message || "Post shared successfully";
+    const success = result.success !== false; // Default to true if not specified
+    const alreadyShared = result.alreadyShared || false;
+
     sendResponse(res, {
-      statusCode: httpStatus.CREATED,
-      success: true,
-      message: "Post shared successfully",
-      data: result,
+      statusCode: httpStatus.OK,
+      success: success,
+      message: message,
+      data: {
+        success: success,
+        message: message,
+        alreadyShared: alreadyShared,
+        share: result.share || result
+      },
     });
   },
 );

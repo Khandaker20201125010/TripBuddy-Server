@@ -120,12 +120,22 @@ const addCommentToMediaPost = (0, catchAsync_1.default)((req, res) => __awaiter(
 const shareMediaPost = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
     const userId = req.user.id;
+    console.log("Controller - Sharing post:", { id, userId });
     const result = yield media_services_1.MediaService.shareMediaPost(id, userId);
+    // Handle both response types
+    const message = result.message || "Post shared successfully";
+    const success = result.success !== false; // Default to true if not specified
+    const alreadyShared = result.alreadyShared || false;
     (0, sendResponse_1.default)(res, {
-        statusCode: http_status_1.default.CREATED,
-        success: true,
-        message: "Post shared successfully",
-        data: result,
+        statusCode: http_status_1.default.OK,
+        success: success,
+        message: message,
+        data: {
+            success: success,
+            message: message,
+            alreadyShared: alreadyShared,
+            share: result.share || result
+        },
     });
 }));
 const deleteMediaPost = (0, catchAsync_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {

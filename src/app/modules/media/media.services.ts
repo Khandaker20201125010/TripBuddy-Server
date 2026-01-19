@@ -494,6 +494,17 @@ const addComment = async (
 };
 
 const shareMediaPost = async (mediaPostId: string, userId: string) => {
+  console.log(`Sharing media post: ${mediaPostId} by user: ${userId}`);
+  
+  // Check if media post exists
+  const mediaPost = await prisma.mediaPost.findUnique({
+    where: { id: mediaPostId },
+  });
+
+  if (!mediaPost) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Media post not found");
+  }
+
   const existingShare = await prisma.share.findUnique({
     where: {
       userId_mediaPostId: {
@@ -504,7 +515,14 @@ const shareMediaPost = async (mediaPostId: string, userId: string) => {
   });
 
   if (existingShare) {
-    throw new ApiError(httpStatus.BAD_REQUEST, "Already shared this post");
+    console.log("User already shared this post");
+    // Return a consistent response format
+    return {
+      success: true,
+      message: "Already shared this post",
+      alreadyShared: true,
+      share: existingShare
+    };
   }
 
   const share = await prisma.share.create({
@@ -522,7 +540,15 @@ const shareMediaPost = async (mediaPostId: string, userId: string) => {
     },
   });
 
-  return share;
+  console.log("Share created successfully");
+  
+  // Return a consistent response format
+  return {
+    success: true,
+    message: "Post shared successfully",
+    alreadyShared: false,
+    share: share
+  };
 };
 
 const deleteMediaPost = async (mediaPostId: string, userId: string) => {

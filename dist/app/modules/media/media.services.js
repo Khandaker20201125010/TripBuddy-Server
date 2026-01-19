@@ -417,6 +417,14 @@ const addComment = (mediaPostId, userId, content, parentId) => __awaiter(void 0,
     return comment;
 });
 const shareMediaPost = (mediaPostId, userId) => __awaiter(void 0, void 0, void 0, function* () {
+    console.log(`Sharing media post: ${mediaPostId} by user: ${userId}`);
+    // Check if media post exists
+    const mediaPost = yield prisma_1.prisma.mediaPost.findUnique({
+        where: { id: mediaPostId },
+    });
+    if (!mediaPost) {
+        throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Media post not found");
+    }
     const existingShare = yield prisma_1.prisma.share.findUnique({
         where: {
             userId_mediaPostId: {
@@ -426,7 +434,14 @@ const shareMediaPost = (mediaPostId, userId) => __awaiter(void 0, void 0, void 0
         },
     });
     if (existingShare) {
-        throw new ApiError_1.default(http_status_1.default.BAD_REQUEST, "Already shared this post");
+        console.log("User already shared this post");
+        // Return a consistent response format
+        return {
+            success: true,
+            message: "Already shared this post",
+            alreadyShared: true,
+            share: existingShare
+        };
     }
     const share = yield prisma_1.prisma.share.create({
         data: {
@@ -441,7 +456,14 @@ const shareMediaPost = (mediaPostId, userId) => __awaiter(void 0, void 0, void 0
             sharesCount: { increment: 1 },
         },
     });
-    return share;
+    console.log("Share created successfully");
+    // Return a consistent response format
+    return {
+        success: true,
+        message: "Post shared successfully",
+        alreadyShared: false,
+        share: share
+    };
 });
 const deleteMediaPost = (mediaPostId, userId) => __awaiter(void 0, void 0, void 0, function* () {
     const mediaPost = yield prisma_1.prisma.mediaPost.findUnique({
