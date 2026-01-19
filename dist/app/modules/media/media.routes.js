@@ -15,17 +15,22 @@ const router = express_1.default.Router();
 // Create media post
 router.post("/", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), fileUploader_1.fileUploader.upload.single("image"), (0, validateRequest_1.default)(media_validation_1.MediaValidation.createMediaPost), media_controller_1.MediaController.createMediaPost);
 // Get all media posts
-router.get("/", media_controller_1.MediaController.getAllMediaPosts);
+router.get("/", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), media_controller_1.MediaController.getAllMediaPosts);
 // Get media post by ID
-router.get("/:id", media_controller_1.MediaController.getMediaPost);
+router.get("/:id", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), media_controller_1.MediaController.getMediaPost);
 // Get user's media posts
 router.get("/user/:userId", media_controller_1.MediaController.getUserMediaPosts);
 // Toggle like
 router.post("/:id/like", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), media_controller_1.MediaController.toggleLikeMediaPost);
 // Add comment
 router.post("/:id/comment", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), (0, validateRequest_1.default)(media_validation_1.MediaValidation.addComment), media_controller_1.MediaController.addCommentToMediaPost);
+// FIXED: Update comment route with proper validation
+router.patch("/:postId/comment/:commentId", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), (0, validateRequest_1.default)(media_validation_1.MediaValidation.updateComment), media_controller_1.MediaController.updateComment);
+// FIXED: Delete comment route with proper validation
+router.delete("/:postId/comment/:commentId", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), (0, validateRequest_1.default)(media_validation_1.MediaValidation.deleteComment), media_controller_1.MediaController.deleteComment);
 // Share post
 router.post("/:id/share", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), media_controller_1.MediaController.shareMediaPost);
+// Update media post
 router.patch("/:id", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), fileUploader_1.fileUploader.upload.single("image"), (0, validateRequest_1.default)(media_validation_1.MediaValidation.updateMediaPost), media_controller_1.MediaController.updateMediaPost);
 // Delete media post
 router.delete("/:id", (0, auth_1.default)(client_1.Role.USER, client_1.Role.ADMIN), media_controller_1.MediaController.deleteMediaPost);

@@ -13,6 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MediaService = void 0;
+// backend/src/modules/media/media.services.ts
 const prisma_1 = require("../../shared/prisma");
 const ApiError_1 = __importDefault(require("../../middlewares/ApiError"));
 const http_status_1 = __importDefault(require("http-status"));
@@ -85,7 +86,7 @@ const getAllMediaPosts = (filters, options, currentUserId) => __awaiter(void 0, 
             { location: { contains: searchTerm, mode: "insensitive" } },
         ];
     }
-    // Fetch media posts
+    // Fetch media posts with user info and counts
     const mediaPosts = yield prisma_1.prisma.mediaPost.findMany({
         where: whereConditions,
         skip,
@@ -105,12 +106,7 @@ const getAllMediaPosts = (filters, options, currentUserId) => __awaiter(void 0, 
                     destination: true,
                 },
             },
-            likes: currentUserId
-                ? {
-                    where: { userId: currentUserId },
-                    select: { id: true },
-                }
-                : false,
+            // Count likes, comments, and shares
             _count: {
                 select: {
                     likes: true,
@@ -120,10 +116,61 @@ const getAllMediaPosts = (filters, options, currentUserId) => __awaiter(void 0, 
             },
         },
     });
-    // Format response
-    const formattedPosts = mediaPosts.map((post) => (Object.assign(Object.assign({}, post), { likesCount: post._count.likes, commentsCount: post._count.comments, sharesCount: post._count.shares, isLiked: currentUserId
-            ? post.likes && post.likes.length > 0
-            : false, _count: undefined, likes: undefined })));
+    console.log(`📊 Found ${mediaPosts.length} media posts for user: ${currentUserId || 'not logged in'}`);
+    // FIXED: Get all like statuses for current user in a single query
+    let userLikes = [];
+    if (currentUserId) {
+        try {
+            console.log(`🔍 Checking likes for user ${currentUserId}`);
+            const likedPosts = yield prisma_1.prisma.like.findMany({
+                where: {
+                    userId: currentUserId,
+                    mediaPostId: {
+                        in: mediaPosts.map(post => post.id)
+                    }
+                },
+                select: {
+                    mediaPostId: true
+                }
+            });
+            console.log(`❤️ User ${currentUserId} has liked ${likedPosts.length} posts out of ${mediaPosts.length}`);
+            userLikes = likedPosts.map(like => like.mediaPostId);
+            // Debug: Log which posts are liked
+            if (likedPosts.length > 0) {
+                console.log('📝 Liked post IDs:', userLikes);
+            }
+        }
+        catch (error) {
+            console.error('❌ Error fetching user likes:', error);
+        }
+    }
+    else {
+        console.log('👤 No current user ID provided, showing all posts as unliked');
+    }
+    // Format response with detailed logging
+    const formattedPosts = mediaPosts.map((post) => {
+        const isLiked = currentUserId ? userLikes.includes(post.id) : false;
+        // Debug log for each post
+        console.log(`🖼️ Post ${post.id}: isLiked = ${isLiked}, total likes = ${post._count.likes}`);
+        return {
+            id: post.id,
+            userId: post.userId,
+            caption: post.caption,
+            imageUrl: post.imageUrl,
+            location: post.location,
+            tags: post.tags || [],
+            likesCount: post._count.likes,
+            commentsCount: post._count.comments,
+            sharesCount: post._count.shares,
+            type: post.type,
+            travelPlanId: post.travelPlanId,
+            createdAt: post.createdAt,
+            updatedAt: post.updatedAt,
+            isLiked: isLiked,
+            user: post.user,
+            travelPlan: post.travelPlan
+        };
+    });
     const total = yield prisma_1.prisma.mediaPost.count({ where: whereConditions });
     return {
         meta: {
@@ -155,12 +202,7 @@ const getMediaPostById = (id, currentUserId) => __awaiter(void 0, void 0, void 0
                     endDate: true,
                 },
             },
-            likes: currentUserId
-                ? {
-                    where: { userId: currentUserId },
-                    select: { id: true },
-                }
-                : false,
+            // Get all comments
             comments: {
                 include: {
                     user: {
@@ -185,6 +227,7 @@ const getMediaPostById = (id, currentUserId) => __awaiter(void 0, void 0, void 0
                 },
                 orderBy: { createdAt: "desc" },
             },
+            // Count likes, comments, and shares
             _count: {
                 select: {
                     likes: true,
@@ -197,49 +240,153 @@ const getMediaPostById = (id, currentUserId) => __awaiter(void 0, void 0, void 0
     if (!mediaPost) {
         throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Media post not found");
     }
-    return Object.assign(Object.assign({}, mediaPost), { likesCount: mediaPost._count.likes, commentsCount: mediaPost._count.comments, sharesCount: mediaPost._count.shares, isLiked: currentUserId
-            ? mediaPost.likes && mediaPost.likes.length > 0
-            : false, _count: undefined, likes: undefined });
-});
-const toggleLike = (mediaPostId, userId) => __awaiter(void 0, void 0, void 0, function* () {
-    const existingLike = yield prisma_1.prisma.like.findUnique({
-        where: {
-            userId_mediaPostId: {
-                userId,
-                mediaPostId,
-            },
-        },
-    });
-    if (existingLike) {
-        // Unlike
-        yield prisma_1.prisma.like.delete({
-            where: { id: existingLike.id },
-        });
-        // Decrement likes count
-        yield prisma_1.prisma.mediaPost.update({
-            where: { id: mediaPostId },
-            data: {
-                likesCount: { decrement: 1 },
+    // Check if current user has liked this post
+    let isLiked = false;
+    if (currentUserId) {
+        const userLike = yield prisma_1.prisma.like.findUnique({
+            where: {
+                userId_mediaPostId: {
+                    userId: currentUserId,
+                    mediaPostId: id,
+                },
             },
         });
-        return { liked: false };
+        isLiked = !!userLike;
     }
-    else {
-        // Like
-        yield prisma_1.prisma.like.create({
-            data: {
-                userId,
-                mediaPostId,
-            },
-        });
-        // Increment likes count
-        yield prisma_1.prisma.mediaPost.update({
+    return Object.assign(Object.assign({}, mediaPost), { likesCount: mediaPost._count.likes, commentsCount: mediaPost._count.comments, sharesCount: mediaPost._count.shares, isLiked, _count: undefined });
+});
+// backend/src/modules/media/media.services.ts - Simplified toggleLike function
+const toggleLike = (mediaPostId, userId) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // 1. Check if media post exists
+        const mediaPost = yield prisma_1.prisma.mediaPost.findUnique({
             where: { id: mediaPostId },
-            data: {
-                likesCount: { increment: 1 },
+        });
+        if (!mediaPost) {
+            throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Media post not found");
+        }
+        // Check if user already liked this post
+        const existingLike = yield prisma_1.prisma.like.findUnique({
+            where: {
+                userId_mediaPostId: {
+                    userId,
+                    mediaPostId,
+                },
             },
         });
-        return { liked: true };
+        let action;
+        let liked;
+        let likesCount;
+        if (existingLike) {
+            // UNLIKE - Delete the existing like
+            yield prisma_1.prisma.like.delete({
+                where: {
+                    userId_mediaPostId: {
+                        userId,
+                        mediaPostId,
+                    },
+                },
+            });
+            // Update likes count
+            likesCount = Math.max(0, mediaPost.likesCount - 1);
+            yield prisma_1.prisma.mediaPost.update({
+                where: { id: mediaPostId },
+                data: {
+                    likesCount: likesCount,
+                },
+            });
+            action = "unliked";
+            liked = false;
+        }
+        else {
+            // LIKE - Create new like
+            yield prisma_1.prisma.like.create({
+                data: {
+                    userId,
+                    mediaPostId,
+                },
+            });
+            // Update likes count
+            likesCount = mediaPost.likesCount + 1;
+            yield prisma_1.prisma.mediaPost.update({
+                where: { id: mediaPostId },
+                data: {
+                    likesCount: likesCount,
+                },
+            });
+            action = "liked";
+            liked = true;
+        }
+        // Get the updated media post with proper includes
+        const updatedMediaPost = yield prisma_1.prisma.mediaPost.findUnique({
+            where: { id: mediaPostId },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        profileImage: true,
+                    },
+                },
+                travelPlan: {
+                    select: {
+                        id: true,
+                        destination: true,
+                    },
+                },
+                likes: {
+                    where: { userId },
+                    select: { id: true, userId: true },
+                },
+                _count: {
+                    select: {
+                        likes: true,
+                        comments: true,
+                        shares: true,
+                    },
+                },
+            },
+        });
+        // Format the media post for response
+        const formattedMediaPost = updatedMediaPost ? Object.assign(Object.assign({}, updatedMediaPost), { likesCount: updatedMediaPost._count.likes, commentsCount: updatedMediaPost._count.comments, sharesCount: updatedMediaPost._count.shares, isLiked: updatedMediaPost.likes && updatedMediaPost.likes.length > 0, _count: undefined, likes: undefined }) : null;
+        return {
+            success: true,
+            liked,
+            likesCount,
+            action,
+            message: action === "liked" ? "Photo liked!" : "Photo unliked",
+            mediaPost: formattedMediaPost
+        };
+    }
+    catch (error) {
+        console.error("Error in toggleLike:", error);
+        // Handle specific errors
+        if (error.code === "P2025") {
+            throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Media post not found");
+        }
+        if (error.code === "P2002") {
+            const currentMediaPost = yield prisma_1.prisma.mediaPost.findUnique({
+                where: { id: mediaPostId },
+                include: {
+                    likes: {
+                        where: { userId },
+                        select: { id: true },
+                    },
+                },
+            });
+            if (!currentMediaPost) {
+                throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Media post not found");
+            }
+            return {
+                success: true,
+                liked: true,
+                likesCount: currentMediaPost.likesCount,
+                action: "already_liked",
+                message: "You already liked this post",
+                mediaPost: currentMediaPost
+            };
+        }
+        throw new ApiError_1.default(http_status_1.default.INTERNAL_SERVER_ERROR, "Failed to process like");
     }
 });
 const addComment = (mediaPostId, userId, content, parentId) => __awaiter(void 0, void 0, void 0, function* () {
@@ -330,12 +477,6 @@ const getUserMediaPosts = (userId, currentUserId) => __awaiter(void 0, void 0, v
                     profileImage: true,
                 },
             },
-            likes: currentUserId
-                ? {
-                    where: { userId: currentUserId },
-                    select: { id: true },
-                }
-                : false,
             _count: {
                 select: {
                     likes: true,
@@ -345,9 +486,35 @@ const getUserMediaPosts = (userId, currentUserId) => __awaiter(void 0, void 0, v
             },
         },
     });
-    return mediaPosts.map((post) => (Object.assign(Object.assign({}, post), { likesCount: post._count.likes, commentsCount: post._count.comments, sharesCount: post._count.shares, isLiked: currentUserId
-            ? post.likes && post.likes.length > 0
-            : false, _count: undefined, likes: undefined })));
+    console.log(`📊 Found ${mediaPosts.length} media posts for user ${userId}, checking likes for user ${currentUserId || 'not logged in'}`);
+    // Get all like statuses for current user
+    let userLikes = [];
+    if (currentUserId) {
+        try {
+            const likedPosts = yield prisma_1.prisma.like.findMany({
+                where: {
+                    userId: currentUserId,
+                    mediaPostId: {
+                        in: mediaPosts.map(post => post.id)
+                    }
+                },
+                select: {
+                    mediaPostId: true
+                }
+            });
+            userLikes = likedPosts.map(like => like.mediaPostId);
+            console.log(`❤️ User ${currentUserId} has liked ${likedPosts.length} of user ${userId}'s posts`);
+        }
+        catch (error) {
+            console.error('❌ Error fetching user likes in getUserMediaPosts:', error);
+        }
+    }
+    return mediaPosts.map((post) => {
+        const isLiked = currentUserId ? userLikes.includes(post.id) : false;
+        // Debug log
+        console.log(`🖼️ User ${userId}'s Post ${post.id}: isLiked = ${isLiked}`);
+        return Object.assign(Object.assign({}, post), { likesCount: post._count.likes, commentsCount: post._count.comments, sharesCount: post._count.shares, isLiked: isLiked, _count: undefined });
+    });
 });
 const updateMediaPost = (mediaPostId, userId, data, file) => __awaiter(void 0, void 0, void 0, function* () {
     const mediaPost = yield prisma_1.prisma.mediaPost.findUnique({
@@ -408,6 +575,102 @@ const updateMediaPost = (mediaPostId, userId, data, file) => __awaiter(void 0, v
     });
     return Object.assign(Object.assign({}, updatedMediaPost), { likesCount: updatedMediaPost._count.likes, commentsCount: updatedMediaPost._count.comments, sharesCount: updatedMediaPost._count.shares, _count: undefined });
 });
+const updateComment = (postId, commentId, userId, content) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        console.log(`🔄 Updating comment: post=${postId}, comment=${commentId}, user=${userId}`);
+        // Verify the comment exists and belongs to the post
+        const comment = yield prisma_1.prisma.comment.findFirst({
+            where: {
+                id: commentId,
+                mediaPostId: postId
+            },
+            include: {
+                user: true
+            }
+        });
+        if (!comment) {
+            throw new ApiError_1.default(http_status_1.default.NOT_FOUND, `Comment ${commentId} not found in post ${postId}`);
+        }
+        // Check ownership
+        if (comment.userId !== userId) {
+            throw new ApiError_1.default(http_status_1.default.FORBIDDEN, "You can only edit your own comments");
+        }
+        const updatedComment = yield prisma_1.prisma.comment.update({
+            where: {
+                id: commentId
+            },
+            data: {
+                content,
+                updatedAt: new Date()
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        profileImage: true,
+                    },
+                },
+            },
+        });
+        console.log(`✅ Comment updated successfully`);
+        return updatedComment;
+    }
+    catch (error) {
+        console.error("❌ Error updating comment:", error);
+        if (error.code === 'P2025') {
+            throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Comment not found");
+        }
+        throw error;
+    }
+});
+const deleteComment = (postId, commentId, userId) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        console.log(`🗑️ Deleting comment: post=${postId}, comment=${commentId}, user=${userId}`);
+        // Find the comment and verify it belongs to the post
+        const comment = yield prisma_1.prisma.comment.findFirst({
+            where: {
+                id: commentId,
+                mediaPostId: postId
+            },
+            include: {
+                user: true,
+                mediaPost: true
+            }
+        });
+        if (!comment) {
+            throw new ApiError_1.default(http_status_1.default.NOT_FOUND, `Comment ${commentId} not found in post ${postId}`);
+        }
+        // Check ownership
+        if (comment.userId !== userId) {
+            throw new ApiError_1.default(http_status_1.default.FORBIDDEN, "You can only delete your own comments");
+        }
+        // Delete the comment
+        yield prisma_1.prisma.comment.delete({
+            where: {
+                id: commentId
+            }
+        });
+        // Decrement comments count
+        yield prisma_1.prisma.mediaPost.update({
+            where: {
+                id: postId
+            },
+            data: {
+                commentsCount: { decrement: 1 }
+            }
+        });
+        console.log(`✅ Comment deleted successfully`);
+        return { success: true };
+    }
+    catch (error) {
+        console.error("❌ Error deleting comment:", error);
+        if (error.code === 'P2025') {
+            throw new ApiError_1.default(http_status_1.default.NOT_FOUND, "Comment not found");
+        }
+        throw error;
+    }
+});
 exports.MediaService = {
     createMediaPost,
     getAllMediaPosts,
@@ -418,4 +681,6 @@ exports.MediaService = {
     deleteMediaPost,
     getUserMediaPosts,
     updateMediaPost,
+    updateComment,
+    deleteComment,
 };
